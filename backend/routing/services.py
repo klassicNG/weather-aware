@@ -485,7 +485,15 @@ def rank_and_summarize_routes(routes: List[Dict[str, Any]]) -> Tuple[List[Dict[s
             else:
                 low_miles += seg_m
 
-        avg_risk_score = (weighted_risk_sum / total_dist) if total_dist > 0 else 1.0
+        total_sampled_miles = sum(cp.get("segment_miles", 0.0) for cp in checkpoints)
+        if total_sampled_miles > 0:
+            avg_risk_score = weighted_risk_sum / total_sampled_miles
+        elif total_dist > 0:
+            avg_risk_score = weighted_risk_sum / total_dist
+        else:
+            avg_risk_score = 1.0
+
+        avg_risk_score = max(1.0, min(5.0, avg_risk_score))
 
         summary = {
             "total_distance_miles": round(total_dist, 1),

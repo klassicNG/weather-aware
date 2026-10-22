@@ -78,34 +78,34 @@ export default function ForecastSliderBar({
       return {
         level: 'Mandatory Shutdown Hazard',
         badgeClass: 'bg-rose-950/90 text-rose-200 border-rose-500/60 shadow-lg shadow-rose-900/40 animate-pulse',
-        text: `🛑 DANGEROUS CONDITIONS (${worstWind} mph wind / storm). High rollover risk for loaded rigs. Delay departure.`,
+        text: `🛑 SHUTDOWN HAZARD AT +${forecastHour}h (${worstWind} mph wind/storm). Active cell along corridor for heavy rigs.`,
       };
     }
     if (maxScore === 4) {
       return {
-        level: 'Severe Weather Alert',
+        level: 'Severe Weather on Corridor',
         badgeClass: 'bg-red-950/80 text-red-200 border-red-500/50',
-        text: `🔴 SEVERE STORM DETECTED (${worstWind} mph wind). Hazardous crosswinds expected. Drive with extreme caution.`,
+        text: `🔴 SEVERE STORM DETECTED AT +${forecastHour}h (${worstWind} mph wind). Active crosswind cell on open highway.`,
       };
     }
     if (maxScore === 3) {
       return {
         level: 'High Wind / Rain Advisory',
         badgeClass: 'bg-orange-950/80 text-orange-200 border-orange-500/50',
-        text: `🟠 ELEVATED WEATHER (${worstWind} mph wind). Gusty winds along corridor. Light/empty trailers take note.`,
+        text: `🟠 ELEVATED WEATHER AT +${forecastHour}h (${worstWind} mph wind). Gusty winds along corridor. Light/empty rigs take note.`,
       };
     }
     if (maxScore === 2) {
       return {
         level: 'Moderate Weather',
         badgeClass: 'bg-amber-950/80 text-amber-200 border-amber-500/50',
-        text: `🟡 ADVISORY: Light rain or 25–34 mph breeze along route. Normal highway speeds recommended.`,
+        text: `🟡 MODERATE CONDITIONS AT +${forecastHour}h: Light rain or 25–34 mph breeze along route.`,
       };
     }
     return {
       level: 'Clear Corridor',
       badgeClass: 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50',
-      text: `🟢 ALL CLEAR (${worstWind} mph breeze). Ideal departure window with clear roads.`,
+      text: `🟢 ALL CLEAR AT +${forecastHour}h (${worstWind} mph breeze). Ideal driving conditions along route.`,
     };
   };
 

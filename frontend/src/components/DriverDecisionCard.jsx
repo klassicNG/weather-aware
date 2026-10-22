@@ -87,7 +87,7 @@ export default function DriverDecisionCard({
               </div>
 
               <div className="bg-slate-900/80 p-2 rounded-xl border border-white/5">
-                <div className="text-[10px] text-slate-400 uppercase font-medium">Risk Score</div>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Trip Risk Score</div>
                 <div
                   className={`text-sm font-extrabold font-mono mt-0.5 ${
                     sum.average_risk_score <= 1.5
@@ -98,6 +98,9 @@ export default function DriverDecisionCard({
                   }`}
                 >
                   {sum.average_risk_score} <span className="text-[10px] text-slate-500 font-normal">/ 5</span>
+                </div>
+                <div className="text-[9px] text-slate-400 font-sans">
+                  {sum.average_risk_score <= 1.5 ? 'All Clear (ETAs)' : 'Elevated Weather'}
                 </div>
               </div>
             </div>

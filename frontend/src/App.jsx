@@ -40,6 +40,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Automatically refresh route risk when Storm Test or Rig Weight is changed
+  useEffect(() => {
+    if (analysisData) {
+      handleAnalyze();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stormStressTest, loadWeight]);
+
   const handleAnalyze = async () => {
     setIsLoading(true);
     setError(null);
