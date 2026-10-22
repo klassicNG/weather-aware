@@ -23,41 +23,96 @@ from .weather_service import (
     attach_weather_and_forecast_to_checkpoints,
 )
 
-# Major US trucking hubs fallback dictionary (coordinates: lat, lon)
-US_TRUCKING_HUBS = {
-    "chicago": {"name": "Chicago, IL", "lat": 41.8781, "lon": -87.6298},
-    "denver": {"name": "Denver, CO", "lat": 39.7392, "lon": -104.9903},
-    "dallas": {"name": "Dallas, TX", "lat": 32.7767, "lon": -96.7970},
-    "atlanta": {"name": "Atlanta, GA", "lat": 33.7490, "lon": -84.3880},
-    "seattle": {"name": "Seattle, WA", "lat": 47.6062, "lon": -122.3321},
-    "new york": {"name": "New York, NY", "lat": 40.7128, "lon": -74.0060},
-    "nyc": {"name": "New York, NY", "lat": 40.7128, "lon": -74.0060},
-    "los angeles": {"name": "Los Angeles, CA", "lat": 34.0522, "lon": -118.2437},
-    "kansas city": {"name": "Kansas City, MO", "lat": 39.0997, "lon": -94.5786},
-    "salt lake city": {"name": "Salt Lake City, UT", "lat": 40.7608, "lon": -111.8910},
-    "minneapolis": {"name": "Minneapolis, MN", "lat": 44.9778, "lon": -93.2650},
-    "houston": {"name": "Houston, TX", "lat": 29.7604, "lon": -95.3698},
-    "phoenix": {"name": "Phoenix, AZ", "lat": 33.4484, "lon": -112.0740},
-    "philadelphia": {"name": "Philadelphia, PA", "lat": 39.9526, "lon": -75.1652},
-    "indianapolis": {"name": "Indianapolis, IN", "lat": 39.7684, "lon": -86.1581},
-    "memphis": {"name": "Memphis, TN", "lat": 35.1495, "lon": -90.0490},
-    "columbus": {"name": "Columbus, OH", "lat": 39.9612, "lon": -82.9988},
-    "nashville": {"name": "Nashville, TN", "lat": 36.1627, "lon": -86.7816},
-    "miami": {"name": "Miami, FL", "lat": 25.7617, "lon": -80.1918},
-    "boston": {"name": "Boston, MA", "lat": 42.3601, "lon": -71.0589},
-    "san francisco": {"name": "San Francisco, CA", "lat": 37.7749, "lon": -122.4194},
-    "detroit": {"name": "Detroit, MI", "lat": 42.3314, "lon": -83.0458},
-    "st. louis": {"name": "St. Louis, MO", "lat": 38.6270, "lon": -90.1994},
-    "st louis": {"name": "St. Louis, MO", "lat": 38.6270, "lon": -90.1994},
-    "pittsburgh": {"name": "Pittsburgh, PA", "lat": 40.4406, "lon": -79.9959},
-    "portland": {"name": "Portland, OR", "lat": 45.5152, "lon": -122.6784},
-    "charlotte": {"name": "Charlotte, NC", "lat": 35.2271, "lon": -80.8431},
-    "omaha": {"name": "Omaha, NE", "lat": 41.2565, "lon": -95.9345},
-    "oklahoma city": {"name": "Oklahoma City, OK", "lat": 35.4676, "lon": -97.5164},
-    "las vegas": {"name": "Las Vegas, NV", "lat": 36.1699, "lon": -115.1398},
-    "san antonio": {"name": "San Antonio, TX", "lat": 29.4241, "lon": -98.4936},
-    "albuquerque": {"name": "Albuquerque, NM", "lat": 35.0844, "lon": -106.6504},
-    "des moines": {"name": "Des Moines, IA", "lat": 41.5868, "lon": -93.6250},
+# Major Global Trucking & Logistics Hubs (North America, Europe, UK, Australia, Latin America, Asia, Africa)
+GLOBAL_TRUCKING_HUBS = {
+    # United States
+    "chicago": {"name": "Chicago, IL, USA", "lat": 41.8781, "lon": -87.6298},
+    "denver": {"name": "Denver, CO, USA", "lat": 39.7392, "lon": -104.9903},
+    "dallas": {"name": "Dallas, TX, USA", "lat": 32.7767, "lon": -96.7970},
+    "atlanta": {"name": "Atlanta, GA, USA", "lat": 33.7490, "lon": -84.3880},
+    "seattle": {"name": "Seattle, WA, USA", "lat": 47.6062, "lon": -122.3321},
+    "new york": {"name": "New York, NY, USA", "lat": 40.7128, "lon": -74.0060},
+    "nyc": {"name": "New York, NY, USA", "lat": 40.7128, "lon": -74.0060},
+    "los angeles": {"name": "Los Angeles, CA, USA", "lat": 34.0522, "lon": -118.2437},
+    "kansas city": {"name": "Kansas City, MO, USA", "lat": 39.0997, "lon": -94.5786},
+    "salt lake city": {"name": "Salt Lake City, UT, USA", "lat": 40.7608, "lon": -111.8910},
+    "minneapolis": {"name": "Minneapolis, MN, USA", "lat": 44.9778, "lon": -93.2650},
+    "houston": {"name": "Houston, TX, USA", "lat": 29.7604, "lon": -95.3698},
+    "phoenix": {"name": "Phoenix, AZ, USA", "lat": 33.4484, "lon": -112.0740},
+    "philadelphia": {"name": "Philadelphia, PA, USA", "lat": 39.9526, "lon": -75.1652},
+    "indianapolis": {"name": "Indianapolis, IN, USA", "lat": 39.7684, "lon": -86.1581},
+    "memphis": {"name": "Memphis, TN, USA", "lat": 35.1495, "lon": -90.0490},
+    "columbus": {"name": "Columbus, OH, USA", "lat": 39.9612, "lon": -82.9988},
+    "nashville": {"name": "Nashville, TN, USA", "lat": 36.1627, "lon": -86.7816},
+    "miami": {"name": "Miami, FL, USA", "lat": 25.7617, "lon": -80.1918},
+    "boston": {"name": "Boston, MA, USA", "lat": 42.3601, "lon": -71.0589},
+    "san francisco": {"name": "San Francisco, CA, USA", "lat": 37.7749, "lon": -122.4194},
+    "detroit": {"name": "Detroit, MI, USA", "lat": 42.3314, "lon": -83.0458},
+    "st louis": {"name": "St. Louis, MO, USA", "lat": 38.6270, "lon": -90.1994},
+    "st. louis": {"name": "St. Louis, MO, USA", "lat": 38.6270, "lon": -90.1994},
+    "pittsburgh": {"name": "Pittsburgh, PA, USA", "lat": 40.4406, "lon": -79.9959},
+    "portland": {"name": "Portland, OR, USA", "lat": 45.5152, "lon": -122.6784},
+    "omaha": {"name": "Omaha, NE, USA", "lat": 41.2565, "lon": -95.9345},
+
+    # Europe
+    "paris": {"name": "Paris, France", "lat": 48.8566, "lon": 2.3522},
+    "berlin": {"name": "Berlin, Germany", "lat": 52.5200, "lon": 13.4050},
+    "frankfurt": {"name": "Frankfurt, Germany", "lat": 50.1109, "lon": 8.6821},
+    "munich": {"name": "Munich, Germany", "lat": 48.1351, "lon": 11.5820},
+    "hamburg": {"name": "Hamburg, Germany", "lat": 53.5511, "lon": 9.9937},
+    "amsterdam": {"name": "Amsterdam, Netherlands", "lat": 52.3676, "lon": 4.9041},
+    "rotterdam": {"name": "Rotterdam, Netherlands", "lat": 51.9244, "lon": 4.4777},
+    "brussels": {"name": "Brussels, Belgium", "lat": 50.8503, "lon": 4.3517},
+    "madrid": {"name": "Madrid, Spain", "lat": 40.4168, "lon": -3.7038},
+    "barcelona": {"name": "Barcelona, Spain", "lat": 41.3879, "lon": 2.1699},
+    "rome": {"name": "Rome, Italy", "lat": 41.9028, "lon": 12.4964},
+    "milan": {"name": "Milan, Italy", "lat": 45.4642, "lon": 9.1900},
+    "vienna": {"name": "Vienna, Austria", "lat": 48.2082, "lon": 16.3738},
+    "warsaw": {"name": "Warsaw, Poland", "lat": 52.2297, "lon": 21.0122},
+    "prague": {"name": "Prague, Czech Republic", "lat": 50.0755, "lon": 14.4378},
+    "zurich": {"name": "Zurich, Switzerland", "lat": 47.3769, "lon": 8.5417},
+
+    # United Kingdom
+    "london": {"name": "London, UK", "lat": 51.5074, "lon": -0.1278},
+    "birmingham": {"name": "Birmingham, UK", "lat": 52.4862, "lon": -1.8904},
+    "manchester": {"name": "Manchester, UK", "lat": 53.4808, "lon": -2.2426},
+    "edinburgh": {"name": "Edinburgh, UK", "lat": 55.9533, "lon": -3.1883},
+    "glasgow": {"name": "Glasgow, UK", "lat": 55.8642, "lon": -4.2518},
+
+    # Canada
+    "toronto": {"name": "Toronto, ON, Canada", "lat": 43.6532, "lon": -79.3832},
+    "montreal": {"name": "Montreal, QC, Canada", "lat": 45.5017, "lon": -73.5673},
+    "vancouver": {"name": "Vancouver, BC, Canada", "lat": 49.2827, "lon": -123.1207},
+    "calgary": {"name": "Calgary, AB, Canada", "lat": 51.0447, "lon": -114.0719},
+    "ottawa": {"name": "Ottawa, ON, Canada", "lat": 45.4215, "lon": -75.6972},
+
+    # Mexico & Latin America
+    "mexico city": {"name": "Mexico City, Mexico", "lat": 19.4326, "lon": -99.1332},
+    "monterrey": {"name": "Monterrey, Mexico", "lat": 25.6866, "lon": -100.3161},
+    "guadalajara": {"name": "Guadalajara, Mexico", "lat": 20.6597, "lon": -103.3496},
+    "sao paulo": {"name": "São Paulo, Brazil", "lat": -23.5505, "lon": -46.6333},
+    "buenos aires": {"name": "Buenos Aires, Argentina", "lat": -34.6037, "lon": -58.3816},
+
+    # Australia
+    "sydney": {"name": "Sydney, NSW, Australia", "lat": -33.8688, "lon": 151.2093},
+    "melbourne": {"name": "Melbourne, VIC, Australia", "lat": -37.8136, "lon": 144.9631},
+    "brisbane": {"name": "Brisbane, QLD, Australia", "lat": -27.4705, "lon": 153.0260},
+    "perth": {"name": "Perth, WA, Australia", "lat": -31.9505, "lon": 115.8605},
+
+    # Africa & Middle East
+    "johannesburg": {"name": "Johannesburg, South Africa", "lat": -26.2041, "lon": 28.0473},
+    "cape town": {"name": "Cape Town, South Africa", "lat": -33.9249, "lon": 18.4241},
+    "lagos": {"name": "Lagos, Nigeria", "lat": 6.5244, "lon": 3.3792},
+    "cairo": {"name": "Cairo, Egypt", "lat": 30.0444, "lon": 31.2357},
+    "nairobi": {"name": "Nairobi, Kenya", "lat": -1.2921, "lon": 36.8219},
+    "dubai": {"name": "Dubai, UAE", "lat": 25.2048, "lon": 55.2708},
+
+    # Asia
+    "tokyo": {"name": "Tokyo, Japan", "lat": 35.6762, "lon": 139.6503},
+    "osaka": {"name": "Osaka, Japan", "lat": 34.6937, "lon": 135.5023},
+    "singapore": {"name": "Singapore", "lat": 1.3521, "lon": 103.8198},
+    "mumbai": {"name": "Mumbai, India", "lat": 19.0760, "lon": 72.8777},
+    "delhi": {"name": "Delhi, India", "lat": 28.7041, "lon": 77.1025},
 }
 
 OSRM_BASE_URL = "https://router.project-osrm.org/route/v1/driving"
@@ -100,13 +155,13 @@ def geocode_location(location_input: Any) -> Dict[str, Any]:
         except ValueError:
             pass
 
-    # Lookup in trucking hub dictionary
+    # Lookup in global trucking hub dictionary
     norm_key = loc_str.lower().replace(".", "").replace(",", "").strip()
-    for hub_key, hub_data in US_TRUCKING_HUBS.items():
+    for hub_key, hub_data in GLOBAL_TRUCKING_HUBS.items():
         if hub_key in norm_key or norm_key in hub_key:
             return dict(hub_data)
 
-    # Query Photon API (fast, high availability geocoder)
+    # Query Photon API (fast, worldwide OSM geocoder)
     try:
         url = f"https://photon.komoot.io/api/?q={requests.utils.quote(loc_str)}&limit=1"
         resp = requests.get(url, timeout=3.0)
@@ -117,9 +172,26 @@ def geocode_location(location_input: Any) -> Dict[str, Any]:
                 coords = features[0]["geometry"]["coordinates"]
                 props = features[0].get("properties", {})
                 name = props.get("name") or loc_str
-                state = props.get("state")
-                full_name = f"{name}, {state}" if state else name
+                country = props.get("country") or props.get("state")
+                full_name = f"{name}, {country}" if country else name
                 return {"name": full_name, "lat": coords[1], "lon": coords[0]}
+    except Exception:
+        pass
+
+    # Secondary Query: OpenStreetMap Nominatim API (Worldwide fallback)
+    try:
+        headers = {"User-Agent": "Spotter-WeatherAware-TruckRouting/2.0"}
+        nom_url = f"https://nominatim.openstreetmap.org/search?format=json&q={requests.utils.quote(loc_str)}&limit=1"
+        resp = requests.get(nom_url, headers=headers, timeout=3.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and len(data) > 0:
+                first = data[0]
+                return {
+                    "name": first.get("display_name", loc_str).split(",")[0],
+                    "lat": float(first["lat"]),
+                    "lon": float(first["lon"]),
+                }
     except Exception:
         pass
 
@@ -187,7 +259,7 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
     # 1. Primary OSRM query requesting alternatives
     try:
         url = f"{OSRM_BASE_URL}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson&alternatives=3"
-        resp = requests.get(url, timeout=5.0)
+        resp = requests.get(url, timeout=2.5)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("code") == "Ok":
@@ -208,7 +280,7 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
     # Scale offset with trip length (approx 45-80 miles detour)
     offset_mag = min(1.4, max(0.6, dist_deg * 0.12))
 
-    offsets = [offset_mag, -offset_mag, offset_mag * 1.6, -offset_mag * 1.6]
+    offsets = [offset_mag, -offset_mag]
     offset_idx = 0
 
     while len(routes) < 3 and offset_idx < len(offsets):
@@ -219,7 +291,7 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
 
         try:
             wp_url = f"{OSRM_BASE_URL}/{start_lon},{start_lat};{wp_lon:.4f},{wp_lat:.4f};{end_lon},{end_lat}?overview=full&geometries=geojson"
-            resp = requests.get(wp_url, timeout=4.0)
+            resp = requests.get(wp_url, timeout=2.0)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("code") == "Ok" and data.get("routes"):

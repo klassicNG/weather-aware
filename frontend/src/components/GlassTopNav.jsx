@@ -93,7 +93,7 @@ export default function GlassTopNav({
               {showPresets && (
                 <div className="absolute top-full left-0 mt-2 w-56 glass-panel rounded-xl p-1.5 shadow-2xl z-[600] text-xs">
                   <div className="text-[10px] uppercase font-bold text-slate-400 px-2 py-1">
-                    Popular Corridors:
+                    Global Freight Corridors:
                   </div>
                   {CORRIDOR_PRESETS.map((p) => (
                     <button
@@ -101,10 +101,13 @@ export default function GlassTopNav({
                       onClick={() => handleSelectPreset(p)}
                       className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 transition-colors flex items-center justify-between"
                     >
-                      <span className="font-medium">{p.name}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {p.tag.split(' ')[0]}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{p.flag}</span>
+                        <div>
+                          <span className="font-semibold block text-xs">{p.name}</span>
+                          <span className="text-[10px] text-slate-400 block">{p.tag}</span>
+                        </div>
+                      </div>
                     </button>
                   ))}
                 </div>

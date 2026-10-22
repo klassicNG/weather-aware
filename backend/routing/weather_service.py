@@ -101,7 +101,7 @@ def fetch_open_meteo_forecast(
 
     results = []
     try:
-        response = requests.get(OPEN_METEO_URL, params=params, timeout=timeout)
+        response = requests.get(OPEN_METEO_URL, params=params, timeout=3.5)
         if response.status_code == 200:
             data = response.json()
             # If multiple coordinates, Open-Meteo returns a list of result objects
@@ -175,10 +175,9 @@ def attach_weather_and_forecast_to_checkpoints(
             load_weight=load_weight
         )
 
-        # Build 0-48h forecast array for heatmap slider (hours 0..48)
+        # Build compact 0-48h forecast array for heatmap slider (hours 0..48)
         # Format: [wind_mph, rain_in_hr, snow_in_hr, risk_score]
         forecast_48h = []
-        forecast_48h_rich = []
         for h in range(49):
             idx = min(h, len(winds) - 1) if winds else 0
             w = float(winds[idx]) if idx < len(winds) else 10.0
@@ -186,23 +185,12 @@ def attach_weather_and_forecast_to_checkpoints(
             s = float(snows[idx]) if idx < len(snows) else 0.0
             h_risk = evaluate_checkpoint_risk(w, r, s, load_weight)
 
-            # Compact tuple [wind_mph, rain_in_hr, snow_in_hr, risk_score]
             forecast_48h.append([
                 round(w, 1),
                 round(r, 2),
                 round(s, 2),
                 h_risk["risk_score"]
             ])
-
-            forecast_48h_rich.append({
-                "hour": h,
-                "wind_mph": round(w, 1),
-                "rain_in_hr": round(r, 2),
-                "snow_in_hr": round(s, 2),
-                "risk_score": h_risk["risk_score"],
-                "risk_level": h_risk["risk_level"],
-                "hazard_reason": h_risk["hazard_reason"]
-            })
 
         enriched_cp = dict(cp)
         enriched_cp["weather"] = {
@@ -212,7 +200,6 @@ def attach_weather_and_forecast_to_checkpoints(
         }
         enriched_cp["risk"] = risk_evaluation
         enriched_cp["forecast_48h"] = forecast_48h
-        enriched_cp["forecast_48h_rich"] = forecast_48h_rich
         enriched_checkpoints.append(enriched_cp)
 
     return enriched_checkpoints

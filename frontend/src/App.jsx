@@ -165,6 +165,7 @@ export default function App() {
           setOpacity={setHeatmapOpacity}
           visible={heatmapVisible}
           setVisible={setHeatmapVisible}
+          activeRoute={analysisData.routes?.find((r) => r.id === activeRouteId) || analysisData.routes?.[0]}
         />
       )}
 
