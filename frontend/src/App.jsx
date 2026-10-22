@@ -158,6 +158,7 @@ export default function App() {
           activeRouteId={activeRouteId}
           setActiveRouteId={setActiveRouteId}
           loadWeight={loadWeight}
+          forecastHour={forecastHour}
         />
       )}
 

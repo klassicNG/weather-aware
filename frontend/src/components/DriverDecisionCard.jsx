@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ShieldCheck,
   Clock,
@@ -17,6 +17,7 @@ export default function DriverDecisionCard({
   activeRouteId = null,
   setActiveRouteId,
   loadWeight = 45000,
+  forecastHour = 0,
 }) {
   const [isMinimized, setIsMinimized] = useState(false);
 
@@ -25,7 +26,77 @@ export default function DriverDecisionCard({
   const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
   const recommendedRoute = routes.find((r) => r.is_recommended) || routes[0];
   const isViewingRecommended = activeRoute?.id === recommendedRoute?.id;
-  const sum = activeRoute?.summary || {};
+
+  // Compute live corridor safety metrics for the currently selected departure / radar hour
+  const sum = useMemo(() => {
+    if (!activeRoute?.checkpoints || activeRoute.checkpoints.length === 0) {
+      return activeRoute?.summary || {};
+    }
+
+    let noTravelM = 0;
+    let severeM = 0;
+    let highM = 0;
+    let moderateM = 0;
+    let lowM = 0;
+    let weightedRiskSum = 0;
+    let totalMiles = 0;
+
+    activeRoute.checkpoints.forEach((cp) => {
+      const segM = cp.segment_miles || 0;
+      totalMiles += segM;
+
+      const data =
+        cp.forecast_48h && cp.forecast_48h[forecastHour]
+          ? cp.forecast_48h[forecastHour]
+          : [
+              cp.weather?.wind_mph || 10,
+              cp.weather?.rain_in_hr || 0,
+              cp.weather?.snow_in_hr || 0,
+              cp.risk?.risk_score || 1,
+            ];
+
+      const [w, r, s, score] = data;
+      weightedRiskSum += segM * score;
+
+      if (score === 5) noTravelM += segM;
+      else if (score === 4) severeM += segM;
+      else if (score === 3) highM += segM;
+      else if (score === 2) moderateM += segM;
+      else lowM += segM;
+    });
+
+    const routeTotalDist = activeRoute.summary?.total_distance_miles || Math.round(totalMiles);
+    const avgScore = totalMiles > 0 ? weightedRiskSum / totalMiles : 1.0;
+
+    return {
+      total_distance_miles: routeTotalDist,
+      total_duration_hours: activeRoute.summary?.total_duration_hours || 0,
+      average_risk_score: Math.max(1.0, Math.min(5.0, Number(avgScore.toFixed(2)))),
+      no_travel_miles: Math.round(noTravelM),
+      severe_miles: Math.round(severeM),
+      high_miles: Math.round(highM),
+      moderate_miles: Math.round(moderateM),
+      low_miles: Math.round(lowM),
+    };
+  }, [activeRoute, forecastHour]);
+
+  // Context-aware plain English driver safety advisory
+  const dynamicAdvisory = useMemo(() => {
+    const timeLabel = forecastHour === 0 ? 'at current departure' : `if leaving at +${forecastHour}h`;
+    if (sum.no_travel_miles > 0) {
+      return `🛑 MANDATORY SHUTDOWN HAZARD: ${sum.no_travel_miles} miles of extreme conditions (≥45–55 mph crosswinds) along this corridor ${timeLabel} for your ${Number(loadWeight).toLocaleString()} lbs rig. Delay departure or take an alternative route.`;
+    }
+    if (sum.severe_miles > 0) {
+      return `🔴 SEVERE WEATHER ALERT: ${sum.severe_miles} miles of severe storms detected along this corridor ${timeLabel}. High crosswind hazard on open highways.`;
+    }
+    if (sum.high_miles > 0) {
+      return `🟠 ELEVATED WEATHER: ${sum.high_miles} miles of gusty crosswinds (35–44 mph) ${timeLabel}. Drive with caution, especially with lighter loads.`;
+    }
+    if (sum.moderate_miles > 0) {
+      return `🟡 MODERATE WEATHER: Light rain or 25–34 mph breezes across ${sum.moderate_miles} miles ${timeLabel}. Standard highway speeds recommended.`;
+    }
+    return `🟢 ALL CLEAR: Ideal corridor conditions with 0 No Travel and 0 Severe miles ${timeLabel} (Average risk ${sum.average_risk_score}/5.0).`;
+  }, [sum, loadWeight, forecastHour]);
 
   return (
     <div className="absolute top-20 left-4 sm:left-6 z-[450] w-80 sm:w-96 pointer-events-auto">
@@ -100,7 +171,14 @@ export default function DriverDecisionCard({
                   {sum.average_risk_score} <span className="text-[10px] text-slate-500 font-normal">/ 5</span>
                 </div>
                 <div className="text-[9px] text-slate-400 font-sans">
-                  {sum.average_risk_score <= 1.5 ? 'All Clear (ETAs)' : 'Elevated Weather'}
+                  {sum.no_travel_miles > 0
+                    ? 'Shutdown Zone'
+                    : sum.severe_miles > 0
+                    ? 'Severe Zone'
+                    : sum.average_risk_score <= 1.2
+                    ? 'All Clear'
+                    : 'Elevated'}
+                  {forecastHour > 0 ? ` (+${forecastHour}h)` : ''}
                 </div>
               </div>
             </div>
@@ -111,7 +189,7 @@ export default function DriverDecisionCard({
                 {isViewingRecommended ? 'Why Take This Route:' : 'Alternative Route Analysis:'}
               </span>
               <p className="text-[11px] text-slate-300">
-                {activeRoute.recommendation_reason}
+                {dynamicAdvisory}
               </p>
             </div>
 
