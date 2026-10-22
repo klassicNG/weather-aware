@@ -11,7 +11,7 @@ import {
 import L from 'leaflet';
 import HeatmapCanvasLayer from './HeatmapCanvasLayer';
 import { RISK_LEVELS } from '../utils/constants';
-import { AlertTriangle, Clock, Wind, CloudRain, Snowflake, ShieldAlert } from 'lucide-react';
+import { Clock, Wind, CloudRain, Snowflake, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 // Automatically fits map bounds when routes change
 function MapAutoFitter({ routes }) {
@@ -31,7 +31,7 @@ function MapAutoFitter({ routes }) {
 
     if (latLngs.length > 0) {
       const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8 });
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 8 });
     }
   }, [routes, map]);
 
@@ -50,24 +50,28 @@ export default function RouteMap({
   const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
 
   return (
-    <div className="relative w-full h-full min-h-[550px] bg-gray-950 overflow-hidden">
+    <div className="absolute inset-0 w-full h-full bg-[#070a12] overflow-hidden">
       <MapContainer
         center={[39.8283, -98.5795]} // Center of USA
         zoom={5}
         scrollWheelZoom={true}
-        className="w-full h-full z-10"
+        className="w-full h-full"
         attributionControl={false}
       >
-        {/* CartoDB Dark Matter Tiles */}
+        {/* Esri World Dark Gray Canvas: 100% Free, Zero Watermarks, Sleek Dark Minimalist */}
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={19}
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+          maxZoom={16}
+        />
+        <TileLayer
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+          maxZoom={16}
+          opacity={0.8}
         />
 
         <MapAutoFitter routes={routes} />
 
-        {/* In-Memory Thermal Heatmap Layer */}
+        {/* 60 FPS Thermal Canvas Heatmap Layer */}
         <HeatmapCanvasLayer
           routes={routes}
           activeRouteId={activeRouteId}
@@ -79,25 +83,21 @@ export default function RouteMap({
 
         {/* Polylines for all 3 routes */}
         {routes.map((route) => {
-          const isSelected = route.id === (activeRoute?.id);
+          const isSelected = route.id === activeRoute?.id;
           const coords = route.geometry?.coordinates?.map(([lon, lat]) => [lat, lon]) || [];
           if (coords.length === 0) return null;
 
-          // Determine polyline color based on recommendation or max risk
-          const baseColor = route.is_recommended ? '#3b82f6' : '#64748b';
-
           return (
             <React.Fragment key={route.id}>
-              {/* Outer stroke for selected route (glowing highlight) */}
+              {/* Outer glow line for selected route */}
               {isSelected && (
                 <Polyline
                   positions={coords}
                   pathOptions={{
-                    color: '#60a5fa',
-                    weight: 8,
-                    opacity: 0.6,
+                    color: route.is_recommended ? '#0284c7' : '#0ea5e9',
+                    weight: 10,
+                    opacity: 0.35,
                     lineCap: 'round',
-                    lineJoin: 'round',
                   }}
                 />
               )}
@@ -106,24 +106,26 @@ export default function RouteMap({
               <Polyline
                 positions={coords}
                 pathOptions={{
-                  color: isSelected ? (route.is_recommended ? '#2563eb' : '#38bdf8') : baseColor,
-                  weight: isSelected ? 5 : 3.5,
-                  opacity: isSelected ? 0.95 : 0.45,
-                  dashArray: isSelected ? null : '6, 6',
+                  color: isSelected
+                    ? (route.is_recommended ? '#38bdf8' : '#38bdf8')
+                    : '#475569',
+                  weight: isSelected ? 5.5 : 3,
+                  opacity: isSelected ? 0.95 : 0.4,
+                  dashArray: isSelected ? null : '5, 8',
                 }}
                 eventHandlers={{
                   click: () => setActiveRouteId && setActiveRouteId(route.id),
                 }}
               >
                 <Tooltip sticky>
-                  <div className="text-xs font-sans">
-                    <span className="font-bold">{route.name}</span>
+                  <div className="text-xs font-sans p-1">
+                    <span className="font-bold text-white">{route.name}</span>
                     {route.is_recommended && (
-                      <span className="ml-1.5 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-semibold">
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">
                         RECOMMENDED
                       </span>
                     )}
-                    <div className="text-gray-400 mt-0.5">
+                    <div className="text-gray-400 text-[11px] mt-0.5">
                       {route.summary?.total_distance_miles} mi • {route.summary?.total_duration_hours} hrs
                     </div>
                   </div>
@@ -138,92 +140,77 @@ export default function RouteMap({
           activeRoute.checkpoints?.map((cp, idx) => {
             const riskScore = cp.risk?.risk_score || 1;
             const riskInfo = RISK_LEVELS[riskScore] || RISK_LEVELS[1];
-            const isNoTravelOrSevere = riskScore >= 4;
-
-            // Weather forecast at current slider hour
-            const forecastAtHour =
-              cp.forecast_48h && cp.forecast_48h[forecastHour]
-                ? cp.forecast_48h[forecastHour]
-                : [
-                    cp.weather?.wind_mph || 0,
-                    cp.weather?.rain_in_hr || 0,
-                    cp.weather?.snow_in_hr || 0,
-                    cp.risk?.risk_score || 1,
-                  ];
+            const isHazard = riskScore >= 2;
+            const isCritical = riskScore >= 4;
 
             return (
               <CircleMarker
                 key={`${activeRoute.id}-cp-${cp.id || idx}`}
                 center={[cp.lat, cp.lon]}
-                radius={isNoTravelOrSevere ? 7 : 5}
+                radius={isCritical ? 7.5 : isHazard ? 5.5 : 3.5}
                 pathOptions={{
                   fillColor: riskInfo.color,
-                  fillOpacity: 0.95,
-                  color: isNoTravelOrSevere ? '#ffffff' : '#1e293b',
-                  weight: isNoTravelOrSevere ? 2 : 1.5,
+                  fillOpacity: isHazard ? 1.0 : 0.6,
+                  color: isCritical ? '#ffffff' : '#0f172a',
+                  weight: isCritical ? 2.5 : 1,
                 }}
               >
                 <Popup>
-                  <div className="text-gray-100 min-w-[240px] text-xs font-sans">
+                  <div className="min-w-[230px] text-xs font-sans text-slate-100">
                     {/* Header */}
-                    <div className="flex items-center justify-between border-b border-gray-700/80 pb-2 mb-2">
-                      <span className="font-bold text-sm text-white">
-                        {cp.name || `Checkpoint ${idx + 1}`}
-                      </span>
+                    <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+                      <div className="font-bold text-sm text-white">
+                        {cp.name || `Mile ${cp.distance_from_origin_miles}`}
+                      </div>
                       <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold border ${riskInfo.bgClass}`}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${riskInfo.bgClass}`}
                       >
-                        {riskInfo.name} ({riskScore}/5)
+                        {riskInfo.name}
                       </span>
                     </div>
 
                     {/* ETA & Distance */}
-                    <div className="grid grid-cols-2 gap-2 mb-2 text-gray-300">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-blue-400" />
-                        <span>ETA: {new Date(cp.eta_iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div className="flex items-center justify-between text-slate-300 text-[11px] mb-2.5">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-sky-400" />
+                        <span>
+                          {new Date(cp.eta_iso).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span className="text-gray-400">Dist:</span>
-                        <span className="font-semibold">{cp.distance_from_origin_miles} mi</span>
-                      </div>
+                      <span className="font-mono text-slate-400">
+                        Mile {cp.distance_from_origin_miles}
+                      </span>
                     </div>
 
-                    {/* Active Conditions at ETA */}
-                    <div className="bg-gray-900/90 rounded-lg p-2.5 border border-gray-800 space-y-1.5">
-                      <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                        Conditions at Arrival:
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-center font-mono text-[11px]">
-                        <div className="bg-gray-800/60 p-1 rounded">
-                          <Wind className="w-3 h-3 mx-auto text-amber-400 mb-0.5" />
-                          <div>{cp.weather?.wind_mph} mph</div>
+                    {/* Conditions Box */}
+                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-white/5 space-y-1.5">
+                      <div className="grid grid-cols-3 gap-1.5 text-center font-mono text-[11px]">
+                        <div className="bg-slate-800/60 p-1.5 rounded-lg">
+                          <Wind className="w-3.5 h-3.5 mx-auto text-amber-400 mb-0.5" />
+                          <div className="font-bold text-slate-200">{cp.weather?.wind_mph}</div>
+                          <div className="text-[9px] text-slate-500">mph</div>
                         </div>
-                        <div className="bg-gray-800/60 p-1 rounded">
-                          <CloudRain className="w-3 h-3 mx-auto text-blue-400 mb-0.5" />
-                          <div>{cp.weather?.rain_in_hr} in/h</div>
+                        <div className="bg-slate-800/60 p-1.5 rounded-lg">
+                          <CloudRain className="w-3.5 h-3.5 mx-auto text-sky-400 mb-0.5" />
+                          <div className="font-bold text-slate-200">{cp.weather?.rain_in_hr}</div>
+                          <div className="text-[9px] text-slate-500">in/h</div>
                         </div>
-                        <div className="bg-gray-800/60 p-1 rounded">
-                          <Snowflake className="w-3 h-3 mx-auto text-purple-400 mb-0.5" />
-                          <div>{cp.weather?.snow_in_hr} in/h</div>
+                        <div className="bg-slate-800/60 p-1.5 rounded-lg">
+                          <Snowflake className="w-3.5 h-3.5 mx-auto text-purple-400 mb-0.5" />
+                          <div className="font-bold text-slate-200">{cp.weather?.snow_in_hr}</div>
+                          <div className="text-[9px] text-slate-500">in/h</div>
                         </div>
                       </div>
 
-                      {/* Hazard explanation */}
                       {cp.risk?.hazard_reason && (
-                        <div className="text-[11px] text-gray-300 italic pt-1 border-t border-gray-800">
+                        <div className="text-[11px] text-slate-300 pt-1.5 border-t border-white/5 leading-relaxed">
                           {cp.risk.hazard_reason}
                         </div>
                       )}
                     </div>
-
-                    {/* Slider Hour Status */}
-                    {forecastHour > 0 && (
-                      <div className="mt-2 text-[10px] text-gray-400 bg-gray-950/70 p-1.5 rounded border border-gray-800">
-                        <span className="font-semibold text-blue-400">Forecast at +{forecastHour}h:</span>{' '}
-                        {forecastAtHour[0]} mph wind, {forecastAtHour[1]} in rain, {forecastAtHour[2]} in snow
-                      </div>
-                    )}
                   </div>
                 </Popup>
               </CircleMarker>

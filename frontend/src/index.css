@@ -1,83 +1,128 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
-/* Base Dark Logistics Theme */
+/* Base Dark Logistics & Glassmorphism Theme */
 :root {
-  --bg-dark: #0b0f19;
-  --panel-bg: rgba(17, 24, 39, 0.85);
-  --panel-border: rgba(55, 65, 81, 0.7);
+  --bg-dark: #070a12;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background-color: #0b0f19;
-  color: #f3f4f6;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  overflow-x: hidden;
+  background-color: #070a12;
+  color: #f8fafc;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Glassmorphism primitives */
+.glass-panel {
+  background: rgba(13, 18, 30, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.12);
+}
+
+.glass-pill {
+  background: rgba(22, 30, 49, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.glass-button {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 /* Custom Leaflet Map Container */
 .leaflet-container {
-  width: 100%;
-  height: 100%;
-  background: #0b0f19 !important;
+  width: 100vw;
+  height: 100vh;
+  background: #070a12 !important;
   font-family: inherit;
 }
 
-/* Dark popup styling */
+/* Hide default leaflet zoom controls to keep minimalist aesthetic */
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  margin-right: 20px !important;
+  margin-top: 85px !important;
+}
+
+.leaflet-control-zoom a {
+  background: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(16px) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(30, 41, 59, 0.95) !important;
+  color: #38bdf8 !important;
+}
+
+/* Sleek minimalist dark popup */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
-  background: rgba(17, 24, 39, 0.95) !important;
-  color: #f3f4f6 !important;
-  border: 1px solid rgba(75, 85, 99, 0.6) !important;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4) !important;
-  backdrop-filter: blur(8px);
-  border-radius: 0.75rem !important;
+  background: rgba(13, 18, 30, 0.92) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: blur(24px) !important;
+  border-radius: 1rem !important;
 }
 
 .leaflet-popup-content {
-  margin: 12px 14px !important;
+  margin: 14px 16px !important;
   line-height: 1.4 !important;
 }
 
-/* Pulsing radar animation for No Travel & Severe checkpoints */
+/* Pulsing radar animation for hazardous checkpoints */
 @keyframes pulse-ring {
   0% {
-    transform: scale(0.95);
-    opacity: 0.8;
+    transform: scale(0.9);
+    opacity: 0.9;
   }
   50% {
-    transform: scale(1.4);
-    opacity: 0.3;
+    transform: scale(1.5);
+    opacity: 0.2;
   }
   100% {
-    transform: scale(0.95);
-    opacity: 0.8;
+    transform: scale(0.9);
+    opacity: 0.9;
   }
 }
 
 .risk-pulse {
-  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-ring 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Custom range slider styling */
+/* Sleek input ranges */
 input[type="range"] {
-  accent-color: #3b82f6;
+  accent-color: #38bdf8;
 }
 
-/* Sleek scrollbar */
+/* Clean scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #111827;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
 }

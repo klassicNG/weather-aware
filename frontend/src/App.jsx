@@ -1,23 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Navigation,
-  ShieldCheck,
-  Truck,
-  AlertCircle,
-  Wifi,
-  WifiOff,
-  Sparkles,
-  Info,
-} from 'lucide-react';
-import DispatchControlPanel from './components/DispatchControlPanel';
+import GlassTopNav from './components/GlassTopNav';
 import RouteMap from './components/RouteMap';
+import DriverDecisionCard from './components/DriverDecisionCard';
 import ForecastSliderBar from './components/ForecastSliderBar';
-import RouteSummaryCards from './components/RouteSummaryCards';
-import RiskRulesLegend from './components/RiskRulesLegend';
+import RiskRulesModal from './components/RiskRulesModal';
 import { checkHealth, analyzeRoutes } from './services/api';
-import { RISK_LEVELS } from './utils/constants';
+import { AlertCircle, WifiOff } from 'lucide-react';
 
-// Get current local datetime in YYYY-MM-DDTHH:mm format for input
 const getDefaultDepartureTime = () => {
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -32,25 +21,18 @@ export default function App() {
   const [checkpointInterval, setCheckpointInterval] = useState(50);
   const [stormStressTest, setStormStressTest] = useState(false);
 
-  // Data & Selection States
+  // Data states
   const [analysisData, setAnalysisData] = useState(null);
   const [activeRouteId, setActiveRouteId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [backendStatus, setBackendStatus] = useState('checking'); // 'online' | 'offline' | 'checking'
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
-  // Heatmap & Slider States
+  // Heatmap & Slider states
   const [forecastHour, setForecastHour] = useState(0);
   const [heatmapMode, setHeatmapMode] = useState('risk'); // 'risk' | 'wind' | 'precip'
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.75);
   const [heatmapVisible, setHeatmapVisible] = useState(true);
-
-  // Check Backend Health on mount
-  useEffect(() => {
-    checkHealth()
-      .then(() => setBackendStatus('online'))
-      .catch(() => setBackendStatus('offline'));
-  }, []);
 
   // Run initial analysis on first load
   useEffect(() => {
@@ -63,7 +45,6 @@ export default function App() {
     setError(null);
 
     try {
-      // Ensure departure time is in UTC ISO string format for backend
       const isoDeparture = new Date(departureTime).toISOString();
 
       const data = await analyzeRoutes({
@@ -74,8 +55,7 @@ export default function App() {
         checkpointInterval,
       });
 
-      // Apply Storm Stress-Test modifications if enabled
-      // Elevates wind speeds along alternative corridors to test 30,000 lb / >40,000 lb rules
+      // Apply Storm Stress-Test simulation if enabled (simulates high winds to test 30k/40k lb overrides)
       let finalRoutes = data.routes || [];
       if (stormStressTest && finalRoutes.length >= 2) {
         finalRoutes = finalRoutes.map((route, rIdx) => {
@@ -103,7 +83,6 @@ export default function App() {
               return cp;
             });
 
-            // Recalculate summary
             const noTravelM = updatedCps.filter((c) => c.risk.risk_score === 5).reduce((acc, c) => acc + c.segment_miles, 0);
             const severeM = updatedCps.filter((c) => c.risk.risk_score === 4).reduce((acc, c) => acc + c.segment_miles, 0);
 
@@ -124,7 +103,6 @@ export default function App() {
 
       setAnalysisData({ ...data, routes: finalRoutes });
       setActiveRouteId(data.recommended_route_id || finalRoutes[0]?.id);
-      setBackendStatus('online');
     } catch (err) {
       console.error('Route analysis failed:', err);
       setError(
@@ -138,125 +116,79 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-gray-100 flex flex-col font-sans">
-      {/* Top Navbar */}
-      <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-md sticky top-0 z-[600]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <Truck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-extrabold text-white tracking-tight">
-                  Weather-Aware Truck Routing
-                </h1>
-                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/40 text-[10px] font-bold uppercase tracking-wider">
-                  Spotter Fleet AI
-                </span>
-              </div>
-              <p className="text-xs text-gray-400 hidden sm:block">
-                Corridor Weather Risk Sampling, Truck Load Engine & 0–48h Heatmap
-              </p>
-            </div>
+    <div className="relative w-screen h-screen overflow-hidden bg-[#070a12] font-sans">
+      {/* 1. Fullscreen Living Map Backdrop */}
+      <RouteMap
+        routes={analysisData?.routes || []}
+        activeRouteId={activeRouteId}
+        setActiveRouteId={setActiveRouteId}
+        forecastHour={forecastHour}
+        heatmapMode={heatmapMode}
+        heatmapOpacity={heatmapOpacity}
+        heatmapVisible={heatmapVisible}
+      />
+
+      {/* 2. Floating Frosted Glass Navigation Bar */}
+      <GlassTopNav
+        origin={origin}
+        setOrigin={setOrigin}
+        destination={destination}
+        setDestination={setDestination}
+        loadWeight={loadWeight}
+        setLoadWeight={setLoadWeight}
+        stormStressTest={stormStressTest}
+        setStormStressTest={setStormStressTest}
+        onSubmit={handleAnalyze}
+        isLoading={isLoading}
+        onOpenRules={() => setShowRulesModal(true)}
+      />
+
+      {/* 3. Driver's Safety Decision Card */}
+      {analysisData && (
+        <DriverDecisionCard
+          routes={analysisData.routes || []}
+          activeRouteId={activeRouteId}
+          setActiveRouteId={setActiveRouteId}
+          loadWeight={loadWeight}
+        />
+      )}
+
+      {/* 4. Floating 0-48h Corridor Forecast Slider */}
+      {analysisData && (
+        <ForecastSliderBar
+          departureTime={analysisData.departure_time || departureTime}
+          forecastHour={forecastHour}
+          setForecastHour={setForecastHour}
+          heatmapMode={heatmapMode}
+          setHeatmapMode={setHeatmapMode}
+          opacity={heatmapOpacity}
+          setOpacity={setHeatmapOpacity}
+          visible={heatmapVisible}
+          setVisible={setHeatmapVisible}
+        />
+      )}
+
+      {/* 5. Error Alert Overlay (if any) */}
+      {error && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[700] w-[90%] max-w-md p-3 rounded-2xl glass-panel border border-rose-500/50 text-rose-300 text-xs flex items-center gap-2.5 shadow-2xl">
+          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="flex-1">
+            <span className="font-bold">Connection notice:</span> {error}
           </div>
-
-          {/* Backend Status Indicator */}
-          <div className="flex items-center gap-2 text-xs">
-            {backendStatus === 'online' ? (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                <Wifi className="w-3.5 h-3.5" />
-                <span>Django API: Online</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 font-semibold">
-                <WifiOff className="w-3.5 h-3.5" />
-                <span>Django API: Connecting / Port 8000</span>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => setError(null)}
+            className="p-1 rounded-lg hover:bg-white/10 text-slate-400"
+          >
+            ✕
+          </button>
         </div>
-      </header>
+      )}
 
-      {/* Main App Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Control Panel & Rules Reference */}
-        <div className="lg:col-span-4 space-y-5 flex flex-col">
-          <DispatchControlPanel
-            origin={origin}
-            setOrigin={setOrigin}
-            destination={destination}
-            setDestination={setDestination}
-            departureTime={departureTime}
-            setDepartureTime={setDepartureTime}
-            loadWeight={loadWeight}
-            setLoadWeight={setLoadWeight}
-            checkpointInterval={checkpointInterval}
-            setCheckpointInterval={setCheckpointInterval}
-            stormStressTest={stormStressTest}
-            setStormStressTest={setStormStressTest}
-            onSubmit={handleAnalyze}
-            isLoading={isLoading}
-          />
-
-          <RiskRulesLegend />
-        </div>
-
-        {/* Right Column: Summaries & Map Area */}
-        <div className="lg:col-span-8 flex flex-col space-y-4">
-          {/* Error Banner */}
-          {error && (
-            <div className="p-4 rounded-xl bg-rose-950/60 border border-rose-500/50 text-rose-300 text-xs flex items-start gap-2.5 shadow-lg">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-              <div>
-                <span className="font-bold">Error executing analysis:</span> {error}
-                <div className="mt-1 text-[11px] text-gray-400">
-                  Make sure the Django backend is running at <code>http://127.0.0.1:8000</code>.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 3-Route Summary Comparison Cards */}
-          <RouteSummaryCards
-            routes={analysisData?.routes || []}
-            activeRouteId={activeRouteId}
-            setActiveRouteId={setActiveRouteId}
-          />
-
-          {/* Interactive Map with Canvas Heatmap & Floating 0-48h Slider */}
-          <div className="relative flex-1 min-h-[580px] rounded-2xl overflow-hidden border border-gray-800 shadow-2xl">
-            <RouteMap
-              routes={analysisData?.routes || []}
-              activeRouteId={activeRouteId}
-              setActiveRouteId={setActiveRouteId}
-              forecastHour={forecastHour}
-              heatmapMode={heatmapMode}
-              heatmapOpacity={heatmapOpacity}
-              heatmapVisible={heatmapVisible}
-            />
-
-            {/* Floating 0-48h Forecast Slider Bar */}
-            <ForecastSliderBar
-              departureTime={analysisData?.departure_time || departureTime}
-              forecastHour={forecastHour}
-              setForecastHour={setForecastHour}
-              heatmapMode={heatmapMode}
-              setHeatmapMode={setHeatmapMode}
-              opacity={heatmapOpacity}
-              setOpacity={setHeatmapOpacity}
-              visible={heatmapVisible}
-              setVisible={setHeatmapVisible}
-            />
-          </div>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-800/80 bg-gray-950 py-3 text-center text-xs text-gray-500">
-        Weather-Aware Truck Routing Assessment • Built with React, Vite, Tailwind CSS, Leaflet & Django REST Framework
-      </footer>
+      {/* 6. Official PDF Rules Reference Modal */}
+      <RiskRulesModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+      />
     </div>
   );
 }
