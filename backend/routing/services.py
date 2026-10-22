@@ -6,9 +6,12 @@ and distance-weighted route recommendation ranking.
 """
 
 import math
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+from requests.adapters import HTTPAdapter
 
 from .risk_engine import (
     RISK_LOW,
@@ -17,11 +20,24 @@ from .risk_engine import (
     RISK_SEVERE,
     RISK_NO_TRAVEL,
     SCORE_TO_LEVEL,
+    evaluate_checkpoint_risk,
 )
 from .weather_service import (
     _parse_iso_datetime,
+    fetch_open_meteo_forecast,
     attach_weather_and_forecast_to_checkpoints,
 )
+
+# Pooled HTTP session for fast OSRM and Geocoder connection reuse
+ROUTING_SESSION = requests.Session()
+adapter = HTTPAdapter(pool_connections=10, pool_maxsize=25, max_retries=1)
+ROUTING_SESSION.mount("https://", adapter)
+ROUTING_SESSION.mount("http://", adapter)
+
+# In-memory caches for instant repeat responses (<10ms)
+GEOCODE_CACHE: Dict[str, Dict[str, Any]] = {}
+CORRIDOR_CACHE: Dict[str, Any] = {}
+CACHE_TTL_SECONDS = 900  # 15 minutes
 
 # Major Global Trucking & Logistics Hubs (North America, Europe, UK, Australia, Latin America, Asia, Africa)
 GLOBAL_TRUCKING_HUBS = {
@@ -155,16 +171,21 @@ def geocode_location(location_input: Any) -> Dict[str, Any]:
         except ValueError:
             pass
 
-    # Lookup in global trucking hub dictionary
+    # Lookup in global trucking hub dictionary or memory cache
     norm_key = loc_str.lower().replace(".", "").replace(",", "").strip()
+    if norm_key in GEOCODE_CACHE:
+        return dict(GEOCODE_CACHE[norm_key])
+
     for hub_key, hub_data in GLOBAL_TRUCKING_HUBS.items():
         if hub_key in norm_key or norm_key in hub_key:
-            return dict(hub_data)
+            res = dict(hub_data)
+            GEOCODE_CACHE[norm_key] = res
+            return res
 
     # Query Photon API (fast, worldwide OSM geocoder)
     try:
         url = f"https://photon.komoot.io/api/?q={requests.utils.quote(loc_str)}&limit=1"
-        resp = requests.get(url, timeout=3.0)
+        resp = ROUTING_SESSION.get(url, timeout=2.5)
         if resp.status_code == 200:
             data = resp.json()
             features = data.get("features", [])
@@ -174,7 +195,9 @@ def geocode_location(location_input: Any) -> Dict[str, Any]:
                 name = props.get("name") or loc_str
                 country = props.get("country") or props.get("state")
                 full_name = f"{name}, {country}" if country else name
-                return {"name": full_name, "lat": coords[1], "lon": coords[0]}
+                res = {"name": full_name, "lat": coords[1], "lon": coords[0]}
+                GEOCODE_CACHE[norm_key] = res
+                return res
     except Exception:
         pass
 
@@ -182,16 +205,18 @@ def geocode_location(location_input: Any) -> Dict[str, Any]:
     try:
         headers = {"User-Agent": "Spotter-WeatherAware-TruckRouting/2.0"}
         nom_url = f"https://nominatim.openstreetmap.org/search?format=json&q={requests.utils.quote(loc_str)}&limit=1"
-        resp = requests.get(nom_url, headers=headers, timeout=3.0)
+        resp = ROUTING_SESSION.get(nom_url, headers=headers, timeout=2.5)
         if resp.status_code == 200:
             data = resp.json()
             if data and len(data) > 0:
                 first = data[0]
-                return {
+                res = {
                     "name": first.get("display_name", loc_str).split(",")[0],
                     "lat": float(first["lat"]),
                     "lon": float(first["lon"]),
                 }
+                GEOCODE_CACHE[norm_key] = res
+                return res
     except Exception:
         pass
 
@@ -259,7 +284,7 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
     # 1. Primary OSRM query requesting alternatives
     try:
         url = f"{OSRM_BASE_URL}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson&alternatives=3"
-        resp = requests.get(url, timeout=2.5)
+        resp = ROUTING_SESSION.get(url, timeout=2.5)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("code") == "Ok":
@@ -267,7 +292,7 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
     except Exception:
         routes = []
 
-    # Compute perpendicular offset waypoints if we have fewer than 3 routes
+    # Compute perpendicular offset waypoints concurrently if we have fewer than 3 routes
     dx = end_lon - start_lon
     dy = end_lat - start_lat
     dist_deg = max(0.01, math.hypot(dx, dy))
@@ -277,29 +302,30 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
     mid_lat = (start_lat + end_lat) / 2.0
     mid_lon = (start_lon + end_lon) / 2.0
 
-    # Scale offset with trip length (approx 45-80 miles detour)
     offset_mag = min(1.4, max(0.6, dist_deg * 0.12))
-
     offsets = [offset_mag, -offset_mag]
-    offset_idx = 0
 
-    while len(routes) < 3 and offset_idx < len(offsets):
-        off = offsets[offset_idx]
-        offset_idx += 1
+    def _fetch_offset_route(off: float) -> Optional[Dict[str, Any]]:
         wp_lat = mid_lat + perp_y * off
         wp_lon = mid_lon + perp_x * off
-
         try:
             wp_url = f"{OSRM_BASE_URL}/{start_lon},{start_lat};{wp_lon:.4f},{wp_lat:.4f};{end_lon},{end_lat}?overview=full&geometries=geojson"
-            resp = requests.get(wp_url, timeout=2.0)
+            resp = ROUTING_SESSION.get(wp_url, timeout=2.0)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("code") == "Ok" and data.get("routes"):
-                    new_route = data["routes"][0]
-                    # Ensure it is reasonably distinct from existing routes
-                    routes.append(new_route)
+                    return data["routes"][0]
         except Exception:
             pass
+        return None
+
+    if len(routes) < 3:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(_fetch_offset_route, off) for off in offsets]
+            for f in futures:
+                res_r = f.result()
+                if res_r:
+                    routes.append(res_r)
 
     # If still fewer than 3 (e.g. offline/network failure), generate synthetic corridor routes
     fallback_factors = [0.0, 0.9, -0.9]
@@ -357,7 +383,6 @@ def sample_checkpoints_from_route(
     seg_idx = 0
 
     for idx, target_d in enumerate(target_distances):
-        # Find polyline segment containing target_d
         while seg_idx < len(cum_miles) - 1 and cum_miles[seg_idx + 1] < target_d:
             seg_idx += 1
 
@@ -375,7 +400,6 @@ def sample_checkpoints_from_route(
             cp_lat = p1_lat
             cp_lon = p1_lon
 
-        # Compute arrival ETA
         progress_ratio = target_d / total_miles
         hours_from_dep = progress_ratio * total_duration_hours
         eta_dt = departure_dt + timedelta(hours=hours_from_dep)
@@ -397,8 +421,6 @@ def sample_checkpoints_from_route(
             "eta_iso": eta_dt.isoformat(),
         })
 
-    # Calculate allocated segment miles for each checkpoint
-    # Mathematically exact: sum(segment_miles) == total_miles
     num_cps = len(sampled_checkpoints)
     for i in range(num_cps):
         if num_cps == 1:
@@ -479,7 +501,6 @@ def rank_and_summarize_routes(routes: List[Dict[str, Any]]) -> Tuple[List[Dict[s
             "low_miles": round(low_miles, 1),
         }
 
-        # Sorting key according to specification
         sort_key = (
             round(no_travel_miles, 2),
             round(severe_miles, 2),
@@ -492,10 +513,7 @@ def rank_and_summarize_routes(routes: List[Dict[str, Any]]) -> Tuple[List[Dict[s
         r["_sort_key"] = sort_key
         evaluated_routes.append(r)
 
-    # Sort routes: lowest tuple is best
     evaluated_routes.sort(key=lambda x: x["_sort_key"])
-
-    # Mark the winner
     winner_id = evaluated_routes[0]["id"]
 
     for i, r in enumerate(evaluated_routes):
@@ -514,7 +532,6 @@ def rank_and_summarize_routes(routes: List[Dict[str, Any]]) -> Tuple[List[Dict[s
 
             reasons.append(f"Average risk {sum_data['average_risk_score']}/5.0")
             reasons.append(f"Estimated duration {sum_data['total_duration_hours']} hrs")
-
             r["recommendation_reason"] = f"RECOMMENDED: {'; '.join(reasons)}."
         else:
             win_sum = evaluated_routes[0]["summary"]
@@ -530,7 +547,6 @@ def rank_and_summarize_routes(routes: List[Dict[str, Any]]) -> Tuple[List[Dict[s
 
             r["recommendation_reason"] = f"Alternative: {', '.join(diffs) if diffs else 'Higher cumulative risk'} compared to recommended route."
 
-        # Remove temporary sort key
         del r["_sort_key"]
 
     return evaluated_routes, winner_id
@@ -544,78 +560,171 @@ def process_route_analysis(
     checkpoint_interval_miles: float = 50.0
 ) -> Dict[str, Any]:
     """
-    Orchestrates end-to-end route analysis:
-    1. Geocoding origin & destination
-    2. Guaranteed 3-route generation via OSRM
-    3. Checkpoint sampling (10/25/50 miles)
-    4. Batch Open-Meteo weather sampling & 0-48h corridor heatmap extraction
-    5. Route risk aggregation & recommendation ranking
+    Orchestrates end-to-end route analysis with fast in-memory caching
+    and single-batch weather fetching across all 3 routes.
     """
     origin = geocode_location(origin_input)
     destination = geocode_location(destination_input)
 
-    # Validate interval (10, 25, or 50 miles)
     interval = float(checkpoint_interval_miles)
     if interval not in (10.0, 25.0, 50.0):
         interval = 50.0
 
-    raw_routes = fetch_guaranteed_3_routes(origin, destination)
+    departure_dt = _parse_iso_datetime(departure_time_iso)
 
+    # Cache key: lat/lon of origin & destination + interval
+    cache_key = f"{origin['lat']:.3f},{origin['lon']:.3f}->{destination['lat']:.3f},{destination['lon']:.3f}:{interval}"
+    cached_entry = CORRIDOR_CACHE.get(cache_key)
+
+    # FAST CACHE HIT: If routes & weather are cached, instantly recompute risk (<5ms)
+    if cached_entry and (time.time() - cached_entry["timestamp"] < CACHE_TTL_SECONDS):
+        cached_routes = cached_entry["routes"]
+        processed_routes = []
+        for cr in cached_routes:
+            recomputed_cps = []
+            for cp in cr["checkpoints"]:
+                raw_w = cp.get("_raw_weather", {})
+                times = raw_w.get("time", [])
+                winds = raw_w.get("wind_speed_10m", [])
+                rains = raw_w.get("rain", [])
+                snows = raw_w.get("snowfall", [])
+
+                eta_dt = _parse_iso_datetime(cp.get("eta_iso", departure_time_iso))
+                hours_from_dep = max(0, int(round((eta_dt - departure_dt).total_seconds() / 3600.0)))
+                weather_idx = min(hours_from_dep, len(winds) - 1) if winds else 0
+
+                w_val = float(winds[weather_idx]) if weather_idx < len(winds) else 10.0
+                r_val = float(rains[weather_idx]) if weather_idx < len(rains) else 0.0
+                s_val = float(snows[weather_idx]) if weather_idx < len(snows) else 0.0
+
+                risk_eval = evaluate_checkpoint_risk(w_val, r_val, s_val, load_weight)
+
+                forecast_48h = []
+                for h in range(49):
+                    idx = min(h, len(winds) - 1) if winds else 0
+                    w = float(winds[idx]) if idx < len(winds) else 10.0
+                    r = float(rains[idx]) if idx < len(rains) else 0.0
+                    s = float(snows[idx]) if idx < len(snows) else 0.0
+                    h_risk = evaluate_checkpoint_risk(w, r, s, load_weight)
+                    forecast_48h.append([round(w, 1), round(r, 2), round(s, 2), h_risk["risk_score"]])
+
+                new_cp = dict(cp)
+                new_cp["risk"] = risk_eval
+                new_cp["forecast_48h"] = forecast_48h
+                recomputed_cps.append(new_cp)
+
+            processed_routes.append({
+                "id": cr["id"],
+                "name": cr["name"],
+                "total_distance_miles": cr["total_distance_miles"],
+                "total_duration_hours": cr["total_duration_hours"],
+                "geometry": cr["geometry"],
+                "checkpoints": recomputed_cps,
+            })
+
+        ranked_routes, recommended_id = rank_and_summarize_routes(processed_routes)
+        return {
+            "origin": origin,
+            "destination": destination,
+            "departure_time": departure_time_iso,
+            "load_weight": float(load_weight),
+            "checkpoint_interval_miles": interval,
+            "recommended_route_id": recommended_id,
+            "routes": ranked_routes,
+            "cached": True,
+        }
+
+    # CACHE MISS: Compute 3 routes & sample checkpoints
+    raw_routes = fetch_guaranteed_3_routes(origin, destination)
     route_names = [
         "Primary Highway Route",
         "Northern Corridor Alternative",
         "Southern Bypass Route",
     ]
 
-    processed_routes = []
+    all_sampled_checkpoints = []
+    route_metadata = []
+
     for idx, raw_r in enumerate(raw_routes):
         route_id = f"route_{idx + 1}"
         name = route_names[idx] if idx < len(route_names) else f"Route Option {idx + 1}"
-
-        # Polyline coordinates
         geom = raw_r.get("geometry", {})
         coords = geom.get("coordinates", [])
 
-        # Distance & duration
         dist_meters = raw_r.get("distance", 0.0)
         dist_miles = dist_meters / 1609.34
         dur_seconds = raw_r.get("duration", 0.0)
         dur_hours = dur_seconds / 3600.0
 
         if dist_miles <= 0.0 and coords:
-            # Calculate from polyline
             for c_i in range(1, len(coords)):
                 dist_miles += haversine_miles(coords[c_i-1][1], coords[c_i-1][0], coords[c_i][1], coords[c_i][0])
             dur_hours = dist_miles / 55.0
 
-        # Sample checkpoints
         checkpoints = sample_checkpoints_from_route(
-            route={
-                "geometry": geom,
-                "distance": dist_meters,
-                "duration": dur_seconds,
-            },
+            route={"geometry": geom, "distance": dist_meters, "duration": dur_seconds},
             interval_miles=interval,
             departure_time_iso=departure_time_iso
         )
 
-        # Attach weather & 0-48h forecast
-        enriched_cps = attach_weather_and_forecast_to_checkpoints(
-            checkpoints=checkpoints,
-            departure_time_iso=departure_time_iso,
-            load_weight=load_weight
-        )
-
-        processed_routes.append({
+        all_sampled_checkpoints.append(checkpoints)
+        route_metadata.append({
             "id": route_id,
             "name": name,
             "total_distance_miles": dist_miles,
             "total_duration_hours": dur_hours,
             "geometry": geom,
-            "checkpoints": enriched_cps,
         })
 
-    # Rank routes and determine recommended winner
+    # Consolidate ALL coordinates across all 3 routes for ONE SINGLE BATCH Open-Meteo call
+    flat_coords = []
+    for cps in all_sampled_checkpoints:
+        for cp in cps:
+            flat_coords.append({"lat": cp["lat"], "lon": cp["lon"]})
+
+    all_weather_batches = fetch_open_meteo_forecast(flat_coords, departure_dt)
+
+    # Distribute weather batches back to route checkpoints
+    processed_routes = []
+    cache_store_routes = []
+    offset = 0
+
+    for idx, r_meta in enumerate(route_metadata):
+        cps = all_sampled_checkpoints[idx]
+        route_batches = all_weather_batches[offset : offset + len(cps)]
+        offset += len(cps)
+
+        enriched_cps = attach_weather_and_forecast_to_checkpoints(
+            checkpoints=cps,
+            departure_time_iso=departure_time_iso,
+            load_weight=load_weight,
+            pre_fetched_weather_batches=route_batches
+        )
+
+        # Store raw weather for instant caching
+        cache_cps = []
+        for c_i, cp in enumerate(enriched_cps):
+            cached_cp = dict(cp)
+            if c_i < len(route_batches):
+                cached_cp["_raw_weather"] = route_batches[c_i]
+            cache_cps.append(cached_cp)
+
+        processed_routes.append({
+            **r_meta,
+            "checkpoints": enriched_cps,
+        })
+        cache_store_routes.append({
+            **r_meta,
+            "checkpoints": cache_cps,
+        })
+
+    # Save to memory cache
+    CORRIDOR_CACHE[cache_key] = {
+        "timestamp": time.time(),
+        "routes": cache_store_routes,
+    }
+
+    # Rank and summarize
     ranked_routes, recommended_id = rank_and_summarize_routes(processed_routes)
 
     return {
@@ -626,4 +735,5 @@ def process_route_analysis(
         "checkpoint_interval_miles": interval,
         "recommended_route_id": recommended_id,
         "routes": ranked_routes,
+        "cached": False,
     }

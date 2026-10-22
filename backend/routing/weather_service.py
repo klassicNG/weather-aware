@@ -8,11 +8,18 @@ import math
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import requests
+from requests.adapters import HTTPAdapter
 
 from .risk_engine import evaluate_checkpoint_risk, RISK_LOW, SCORE_TO_LEVEL
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+
+# Pooled session for fast connection reuse
+SESSION = requests.Session()
+adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20, max_retries=1)
+SESSION.mount("https://", adapter)
+SESSION.mount("http://", adapter)
 
 
 def _parse_iso_datetime(dt_str: str) -> datetime:
@@ -96,12 +103,12 @@ def fetch_open_meteo_forecast(
         "hourly": "wind_speed_10m,rain,snowfall",
         "wind_speed_unit": "mph",
         "precipitation_unit": "inch",
-        "forecast_days": 7,
+        "forecast_days": 3,
     }
 
     results = []
     try:
-        response = requests.get(OPEN_METEO_URL, params=params, timeout=3.5)
+        response = SESSION.get(OPEN_METEO_URL, params=params, timeout=3.5)
         if response.status_code == 200:
             data = response.json()
             # If multiple coordinates, Open-Meteo returns a list of result objects
@@ -132,7 +139,8 @@ def fetch_open_meteo_forecast(
 def attach_weather_and_forecast_to_checkpoints(
     checkpoints: List[Dict[str, Any]],
     departure_time_iso: str,
-    load_weight: float
+    load_weight: float,
+    pre_fetched_weather_batches: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     Enriches checkpoints with:
@@ -144,8 +152,11 @@ def attach_weather_and_forecast_to_checkpoints(
         return checkpoints
 
     departure_dt = _parse_iso_datetime(departure_time_iso)
-    coords = [{"lat": cp["lat"], "lon": cp["lon"]} for cp in checkpoints]
-    weather_batches = fetch_open_meteo_forecast(coords, departure_dt)
+    if pre_fetched_weather_batches is not None:
+        weather_batches = pre_fetched_weather_batches
+    else:
+        coords = [{"lat": cp["lat"], "lon": cp["lon"]} for cp in checkpoints]
+        weather_batches = fetch_open_meteo_forecast(coords, departure_dt)
 
     enriched_checkpoints = []
     for i, cp in enumerate(checkpoints):

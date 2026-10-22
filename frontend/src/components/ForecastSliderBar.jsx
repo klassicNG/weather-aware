@@ -111,11 +111,23 @@ export default function ForecastSliderBar({
 
   const advisory = getHourlyRouteAdvisory();
 
+  // Radar Playback: Stops automatically when reaching hour 48 (no infinite loop)
   useEffect(() => {
     if (isPlaying) {
       const delay = playSpeed === 2 ? 140 : 280;
       intervalRef.current = setInterval(() => {
-        setForecastHour((prev) => (prev >= 48 ? 0 : prev + 1));
+        setForecastHour((prev) => {
+          if (prev >= 48) {
+            setIsPlaying(false);
+            return 48;
+          }
+          const next = prev + 1;
+          if (next >= 48) {
+            setIsPlaying(false);
+            return 48;
+          }
+          return next;
+        });
       }, delay);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -124,6 +136,17 @@ export default function ForecastSliderBar({
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [isPlaying, playSpeed, setForecastHour]);
+
+  const handleTogglePlay = () => {
+    if (!isPlaying) {
+      if (forecastHour >= 48) {
+        setForecastHour(0);
+      }
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(false);
+    }
+  };
 
   return (
     <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[95%] max-w-4xl z-[450] pointer-events-auto">
@@ -283,9 +306,9 @@ export default function ForecastSliderBar({
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={handleTogglePlay}
                   className="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs transition-all shadow-md shadow-sky-500/30 flex items-center gap-1.5"
-                  title={isPlaying ? 'Pause radar animation' : 'Animate 48-hour weather timeline'}
+                  title={isPlaying ? 'Pause radar animation' : 'Animate 48-hour weather timeline (stops at hour 48)'}
                 >
                   {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                   <span>{isPlaying ? 'Pause' : 'Play Radar'}</span>
