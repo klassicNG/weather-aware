@@ -84,8 +84,11 @@ export default function RouteMap({
   spotlightPoint = null,
   origin = 'Chicago, IL',
   destination = 'Denver, CO',
+  onOpenDispatch = null,
+  isSidebarOpen = false,
 }) {
   const [showAllEtas, setShowAllEtas] = useState(false);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
   const recommendedRoute = routes.find((r) => r.is_recommended) || routes[0];
@@ -98,9 +101,22 @@ export default function RouteMap({
           route summaries on a map" with zero screen clutter or floating boxes.
       ========================================================================= */}
       {routes.length > 0 && (
-        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/92 backdrop-blur-md border-b border-white/10 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-2xl pointer-events-auto">
-          {/* Corridor Selection Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/95 backdrop-blur-md border-b border-white/10 px-2 py-1.5 flex items-center justify-between gap-1.5 shadow-2xl overflow-x-auto no-scrollbar pointer-events-auto">
+          {/* Corridor Selection Tabs & Mobile Dispatch Opener */}
+          <div className="flex items-center gap-1.5 shrink-0 sm:flex-1 min-w-0">
+            {/* Mobile Open Dispatch Button - Cleanly integrated inside top bar */}
+            {onOpenDispatch && (
+              <button
+                type="button"
+                onClick={onOpenDispatch}
+                className="lg:hidden shrink-0 px-2 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 active:bg-sky-500/40 border border-sky-400/40 text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition-all"
+                title="Open Dispatch Controls"
+              >
+                <span>🚚</span>
+                <span className="font-mono text-[10px] uppercase tracking-wider">Dispatch</span>
+              </button>
+            )}
+
             {routes.map((route, idx) => {
               const isSelected = route.id === activeRoute?.id;
               const isRec = route.is_recommended || route.id === recommendedRoute?.id;
@@ -122,17 +138,18 @@ export default function RouteMap({
                   key={route.id}
                   type="button"
                   onClick={() => setActiveRouteId && setActiveRouteId(route.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border ${
+                  className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-mono transition-all flex items-center gap-1.5 sm:gap-2 border shrink-0 ${
                     isSelected
                       ? 'bg-slate-800/95 border-white/25 text-white shadow-lg ring-1 ring-sky-400/50'
                       : 'bg-slate-950/60 hover:bg-slate-900 border-white/5 text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    className="w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: palette.primary }}
                   />
-                  <div className="flex items-center gap-1.5">
+                  {/* Desktop view */}
+                  <div className="hidden sm:flex items-center gap-1.5">
                     <span className="font-extrabold tracking-tight text-white whitespace-nowrap">
                       {route.name}
                     </span>
@@ -141,15 +158,22 @@ export default function RouteMap({
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 text-[11px] text-slate-300 border-l border-white/10 pl-2">
+                  {/* Mobile compact view */}
+                  <div className="flex sm:hidden items-center gap-1">
+                    <span className="font-extrabold text-[11px] text-white whitespace-nowrap">
+                      {isRec ? '★ Safest' : `Alt ${idx}`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-slate-300 border-l border-white/10 pl-1.5 sm:pl-2">
                     <span className="font-bold text-slate-200">{sum.total_duration_hours}h</span>
+                    <span className="hidden sm:inline text-slate-500">•</span>
+                    <span className="hidden sm:inline">{sum.total_distance_miles}m</span>
                     <span className="text-slate-500">•</span>
-                    <span>{sum.total_distance_miles}m</span>
-                    <span className="text-slate-500">•</span>
-                    <span className="text-sky-300">Arr {etaTime}</span>
-                    <span className="text-slate-500">•</span>
+                    <span className="text-sky-300 whitespace-nowrap">Arr {etaTime}</span>
+                    <span className="hidden xs:inline text-slate-500">•</span>
                     <span
-                      className={`font-bold ${
+                      className={`hidden xs:inline font-bold ${
                         sum.average_risk_score <= 1.5
                           ? 'text-emerald-400'
                           : sum.average_risk_score <= 2.5
@@ -165,17 +189,18 @@ export default function RouteMap({
             })}
           </div>
 
-          {/* Right Controls: Checkpoint Counter, In-situ ETA density toggle & Quick Risk Legend */}
-          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400 pl-2">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-900/80 border border-white/10 text-[10px] text-sky-300 font-bold font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
-              <span>{activeRoute?.checkpoints?.length || 0} Checkpoints on Map</span>
+          {/* Right Controls: Checkpoint Counter & ETA density toggle */}
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded bg-slate-900/80 border border-white/10 text-[10px] text-sky-300 font-bold font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
+              <span className="hidden sm:inline">{activeRoute?.checkpoints?.length || 0} Checkpoints on Map</span>
+              <span className="sm:hidden">{activeRoute?.checkpoints?.length || 0} CPs</span>
             </div>
 
             <button
               type="button"
               onClick={() => setShowAllEtas(!showAllEtas)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all border ${
+              className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all border ${
                 showAllEtas
                   ? 'bg-sky-500 text-white border-sky-400 shadow'
                   : 'bg-slate-900 text-slate-400 hover:text-white border-white/10'
@@ -183,7 +208,8 @@ export default function RouteMap({
               title="Toggle between Key Milestone ETAs and Every Checkpoint ETA along the highway"
             >
               <Tag className="w-3 h-3" />
-              <span>{showAllEtas ? 'All ETAs Visible' : 'Key ETAs'}</span>
+              <span className="hidden sm:inline">{showAllEtas ? 'All ETAs Visible' : 'Key ETAs'}</span>
+              <span className="sm:hidden">{showAllEtas ? 'All' : 'ETAs'}</span>
             </button>
 
             {/* Dynamic Telemetry Legend (Adapts to Active Mode: Risk, Wind, Rain, Snow) */}
@@ -331,8 +357,8 @@ export default function RouteMap({
                 </Tooltip>
               </Polyline>
 
-              {/* Pure Cartographic Typography along Highway (No Card, Zero Box) */}
-              {midCoord && (
+              {/* Pure Cartographic Typography along Highway (Only for selected route, and on larger screens to avoid mobile overlap) */}
+              {isSelected && midCoord && (
                 <CircleMarker
                   center={midCoord}
                   radius={1}
@@ -344,7 +370,7 @@ export default function RouteMap({
                   <Tooltip permanent direction="top" offset={[0, -6]}>
                     <div
                       onClick={() => setActiveRouteId && setActiveRouteId(route.id)}
-                      className="cursor-pointer select-none font-mono text-[11px] font-extrabold uppercase carto-halo-text flex items-center gap-1.5 transition-transform hover:scale-105"
+                      className="hidden sm:flex cursor-pointer select-none font-mono text-[11px] font-extrabold uppercase carto-halo-text items-center gap-1.5 transition-transform hover:scale-105"
                       style={{ color: palette.primary }}
                     >
                       <span
@@ -515,9 +541,10 @@ export default function RouteMap({
             const isQuarterMilestone = quarterMilestones.has(idx);
             const isPeakHazard = idx === peakHazardIdx;
 
-            // Only show labels for quarter milestones, single peak storm point, or if showAllEtas is on (spaced every 4th)
-            const shouldShowBadge =
-              (showAllEtas && idx % 4 === 0) || isQuarterMilestone || isPeakHazard;
+            // Only show labels for quarter milestones on desktop, single peak storm point, or when ETAs are toggled on
+            const shouldShowBadge = showAllEtas
+              ? (isMobile ? idx % 6 === 0 : idx % 4 === 0)
+              : (isPeakHazard && isCritical) || (!isMobile && isQuarterMilestone);
 
             return (
               <CircleMarker
@@ -640,7 +667,7 @@ export default function RouteMap({
             {/* Origin */}
             <CircleMarker
               center={[activeRoute.checkpoints[0].lat, activeRoute.checkpoints[0].lon]}
-              radius={7}
+              radius={6}
               pathOptions={{
                 fillColor: '#10b981',
                 fillOpacity: 1,
@@ -649,9 +676,9 @@ export default function RouteMap({
               }}
             >
               <Tooltip permanent direction="top" offset={[0, -8]}>
-                <div className="carto-halo-text text-[11px] font-mono font-extrabold text-emerald-400 select-none">
-                  ▲ ORIGIN: <span className="text-white">{origin || activeRoute.checkpoints[0]?.name || 'Origin'}</span>
-                  <span className="text-slate-300 font-normal">
+                <div className="carto-halo-text text-[10px] sm:text-[11px] font-mono font-extrabold text-emerald-400 select-none">
+                  ▲ <span className="text-white">{origin ? origin.split(',')[0] : 'Origin'}</span>
+                  <span className="text-slate-300 font-normal hidden sm:inline">
                     {' '}(Dep: {activeRoute.checkpoints[0]?.eta_iso ? new Date(activeRoute.checkpoints[0].eta_iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Now'})
                   </span>
                 </div>
@@ -664,7 +691,7 @@ export default function RouteMap({
                 activeRoute.checkpoints[activeRoute.checkpoints.length - 1].lat,
                 activeRoute.checkpoints[activeRoute.checkpoints.length - 1].lon,
               ]}
-              radius={7}
+              radius={6}
               pathOptions={{
                 fillColor: '#f43f5e',
                 fillOpacity: 1,
@@ -673,9 +700,9 @@ export default function RouteMap({
               }}
             >
               <Tooltip permanent direction="top" offset={[0, -8]}>
-                <div className="carto-halo-text text-[11px] font-mono font-extrabold text-rose-400 select-none">
-                  ▼ DESTINATION: <span className="text-white">{destination || activeRoute.checkpoints[activeRoute.checkpoints.length - 1]?.name || 'Destination'}</span>
-                  <span className="text-emerald-300 font-normal">
+                <div className="carto-halo-text text-[10px] sm:text-[11px] font-mono font-extrabold text-rose-400 select-none">
+                  ▼ <span className="text-white">{destination ? destination.split(',')[0] : 'Destination'}</span>
+                  <span className="text-emerald-300 font-normal hidden sm:inline">
                     {' '}(ETA: {activeRoute.checkpoints[activeRoute.checkpoints.length - 1]?.eta_iso ? new Date(activeRoute.checkpoints[activeRoute.checkpoints.length - 1].eta_iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '--:--'})
                   </span>
                 </div>

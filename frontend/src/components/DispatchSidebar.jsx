@@ -19,6 +19,7 @@ import {
   Sparkles,
   Layers,
   ChevronLeft,
+  X,
 } from 'lucide-react';
 import { CORRIDOR_PRESETS } from '../utils/constants';
 import CorridorMileChart from './CorridorMileChart';
@@ -72,9 +73,11 @@ export default function DispatchSidebar({
   setActiveRouteId,
   forecastHour = 0,
   onHoverCheckpoint,
+  isOpen = false,
+  onClose,
+  onToggle,
 }) {
   const [showPresets, setShowPresets] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const handleSelectPreset = (p) => {
     setOrigin(p.origin);
@@ -103,25 +106,22 @@ export default function DispatchSidebar({
 
   return (
     <>
-      {/* Mobile / Collapsed Drawer Toggle Tab */}
-      <button
-        type="button"
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="lg:hidden absolute top-3 left-3 z-[600] glass-panel px-3 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-2 shadow-2xl"
-      >
-        <Truck className="w-4 h-4 text-sky-400" />
-        <span>{isSidebarOpen ? 'Hide Dispatch Panel' : 'Open Dispatch & Routes'}</span>
-        {isSidebarOpen ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-      </button>
+      {/* Mobile Dark Backdrop Overlay */}
+      {isOpen && (
+        <div
+          onClick={onClose}
+          className="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[650] transition-opacity"
+        />
+      )}
 
       {/* Main Structured Sidebar Workspace */}
       <aside
-        className={`fixed lg:static top-0 left-0 h-full w-[92vw] sm:w-[420px] lg:w-[440px] shrink-0 bg-[#070a12]/95 backdrop-blur-2xl border-r border-white/10 z-[550] flex flex-col transition-transform duration-300 ease-in-out ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed lg:static top-0 left-0 h-full w-[90vw] max-w-[420px] lg:w-[440px] shrink-0 bg-[#070a12]/98 backdrop-blur-2xl border-r border-white/10 z-[700] flex flex-col transition-transform duration-300 ease-in-out shadow-2xl ${
+          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        {/* 1. Header: Brand, Storm Test, Rules, Tour */}
-        <div className="p-3.5 border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
+        {/* 1. Header: Brand, Storm Test, Rules, Tour, Close */}
+        <div className="p-3 sm:p-3.5 border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/25">
               <Truck className="w-4 h-4 text-white" />
@@ -142,6 +142,16 @@ export default function DispatchSidebar({
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Mobile Close Drawer Button */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="lg:hidden p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-white/10 transition-colors"
+              title="Close dispatch panel and view map"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
             {/* Storm Test Toggle */}
             <button
               type="button"
@@ -178,6 +188,7 @@ export default function DispatchSidebar({
             </button>
           </div>
         </div>
+
 
         {/* Scrollable Center Body: Dispatch Controls + 3 Routes + Mile Chart */}
         <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 text-xs">

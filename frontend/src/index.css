@@ -44,6 +44,16 @@ body {
   border-color: rgba(255, 255, 255, 0.22);
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Custom Leaflet Map Container */
 .leaflet-container {
   width: 100vw;
@@ -58,8 +68,14 @@ body {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
   border-radius: 12px !important;
   overflow: hidden;
-  margin-right: 20px !important;
-  margin-top: 85px !important;
+  margin-right: 14px !important;
+  margin-top: 56px !important;
+}
+@media (min-width: 640px) {
+  .leaflet-control-zoom {
+    margin-right: 20px !important;
+    margin-top: 60px !important;
+  }
 }
 
 .leaflet-control-zoom a {

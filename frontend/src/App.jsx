@@ -29,6 +29,7 @@ export default function App() {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showTourModal, setShowTourModal] = useState(false);
   const [spotlightPoint, setSpotlightPoint] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Heatmap & Slider states
   const [forecastHour, setForecastHour] = useState(0);
@@ -227,7 +228,10 @@ export default function App() {
         setCheckpointInterval={setCheckpointInterval}
         stormStressTest={stormStressTest}
         setStormStressTest={setStormStressTest}
-        onSubmit={handleAnalyze}
+        onSubmit={(params) => {
+          setIsSidebarOpen(false); // auto-close on mobile when analyzing so map is immediately visible
+          handleAnalyze(params);
+        }}
         isLoading={isLoading}
         onOpenRules={() => setShowRulesModal(true)}
         onOpenTour={() => setShowTourModal(true)}
@@ -236,6 +240,9 @@ export default function App() {
         setActiveRouteId={setActiveRouteId}
         forecastHour={forecastHour}
         onHoverCheckpoint={setSpotlightPoint}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
 
       {/* 2. Right Canvas: Fullscreen Living Map + Bottom Radar Slider */}
@@ -252,6 +259,8 @@ export default function App() {
           spotlightPoint={spotlightPoint}
           origin={origin}
           destination={destination}
+          onOpenDispatch={() => setIsSidebarOpen(true)}
+          isSidebarOpen={isSidebarOpen}
         />
 
         {/* Floating 0-48h Corridor Forecast Slider (Docked at bottom of map) */}
