@@ -31,7 +31,18 @@ export default function ForecastSliderBar({
   const [isMinimized, setIsMinimized] = useState(
     typeof window !== 'undefined' && window.innerWidth < 640
   );
+  const userToggledMinimize = useRef(false);
   const intervalRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (!userToggledMinimize.current) {
+        setIsMinimized(window.innerWidth < 640);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Formatted date string for current forecast hour
   const getOffsetTimestamp = () => {
@@ -226,7 +237,10 @@ export default function ForecastSliderBar({
 
           {/* Minimize toggle */}
           <button
-            onClick={() => setIsMinimized(!isMinimized)}
+            onClick={() => {
+              userToggledMinimize.current = true;
+              setIsMinimized(!isMinimized);
+            }}
             className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
             title={isMinimized ? 'Expand weather simulator' : 'Collapse'}
           >
@@ -240,27 +254,27 @@ export default function ForecastSliderBar({
             <span className="font-bold uppercase tracking-wider text-[10px] sm:text-[11px] shrink-0">
               [{advisory.level}]
             </span>
-            <span className="line-clamp-1 text-[11px] sm:text-xs hidden sm:block">{advisory.text}</span>
+            <span className="line-clamp-1 text-[11px] sm:text-xs">{advisory.text}</span>
           </div>
           <div className="flex items-center gap-1.5 font-mono text-[10px] sm:text-[11px] shrink-0">
             {heatmapMode === 'rain' && (
               <span className="text-sky-300 font-bold bg-sky-950/70 px-1.5 sm:px-2 py-0.5 rounded border border-sky-500/30 whitespace-nowrap">
-                🌧️ {advisory.worstRain ? advisory.worstRain.toFixed(2) : '0.00'} in/hr
+                🌧️ <span className="hidden sm:inline">Peak Rain: </span>{advisory.worstRain ? advisory.worstRain.toFixed(2) : '0.00'} in/hr
               </span>
             )}
             {heatmapMode === 'snow' && (
               <span className="text-purple-300 font-bold bg-purple-950/70 px-1.5 sm:px-2 py-0.5 rounded border border-purple-500/30 whitespace-nowrap">
-                ❄️ {advisory.worstSnow ? advisory.worstSnow.toFixed(2) : '0.00'} in/hr
+                ❄️ <span className="hidden sm:inline">Peak Snow: </span>{advisory.worstSnow ? advisory.worstSnow.toFixed(2) : '0.00'} in/hr
               </span>
             )}
             {heatmapMode === 'wind' && (
               <span className="text-amber-300 font-bold bg-amber-950/70 px-1.5 sm:px-2 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
-                🌬️ {advisory.worstWind ? advisory.worstWind.toFixed(0) : '0'} mph
+                🌬️ <span className="hidden sm:inline">Peak Wind: </span>{advisory.worstWind ? advisory.worstWind.toFixed(0) : '0'} mph
               </span>
             )}
             {heatmapMode === 'risk' && (
               <span className="text-rose-300 font-bold bg-rose-950/70 px-1.5 sm:px-2 py-0.5 rounded border border-rose-500/30 whitespace-nowrap">
-                🛡️ Lvl {advisory.maxScore || 1}/5
+                🛡️ <span className="hidden sm:inline">Max Risk: </span>Level {advisory.maxScore || 1}/5
               </span>
             )}
           </div>
@@ -268,10 +282,10 @@ export default function ForecastSliderBar({
 
         {!isMinimized && (
           <>
-            {/* Quick Departure Window Jump Buttons + Metric Selector — horizontally scrollable on mobile */}
-            <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
-              {/* Scrollable jump buttons */}
-              <div className="flex items-center gap-1 text-xs overflow-x-auto no-scrollbar flex-nowrap pr-1">
+            {/* Quick Departure Window Jump Buttons + Metric Selector */}
+            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 mb-2 sm:mb-3">
+              {/* Scrollable jump buttons on mobile, clean flex on desktop */}
+              <div className="flex items-center gap-1 text-xs overflow-x-auto sm:overflow-visible no-scrollbar flex-nowrap pr-1">
                 <span className="text-[10px] uppercase font-bold text-slate-400 mr-0.5 shrink-0 hidden sm:inline">
                   Jump:
                 </span>
@@ -281,6 +295,7 @@ export default function ForecastSliderBar({
                   { label: '+6h', hours: 6 },
                   { label: '+12h', hours: 12 },
                   { label: '+24h', hours: 24 },
+                  { label: '+48h', hours: 48 },
                 ].map(({ label, hours }) => (
                   <button
                     key={hours}
@@ -297,25 +312,26 @@ export default function ForecastSliderBar({
                 ))}
               </div>
 
-              {/* Metric Selector Pills — scrollable on mobile */}
-              <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-950/70 p-0.5 sm:p-1 rounded-xl border border-white/5 text-[11px] sm:text-xs overflow-x-auto no-scrollbar flex-nowrap shrink-0">
+              {/* Metric Selector Pills — scrollable on mobile, full labels on desktop */}
+              <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-950/70 p-0.5 sm:p-1 rounded-xl border border-white/5 text-[11px] sm:text-xs overflow-x-auto sm:overflow-visible no-scrollbar flex-nowrap shrink-0">
                 {[
-                  { mode: 'risk', icon: <ShieldAlert className="w-3 sm:w-3.5 h-3 sm:h-3.5" />, label: 'Risk', activeClass: 'bg-rose-500/80' },
-                  { mode: 'wind', icon: <Wind className="w-3 sm:w-3.5 h-3 sm:h-3.5" />, label: 'Wind', activeClass: 'bg-amber-500/80' },
-                  { mode: 'rain', icon: <CloudRain className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-sky-400" />, label: 'Rain', activeClass: 'bg-blue-600' },
-                  { mode: 'snow', icon: <Snowflake className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-purple-300" />, label: 'Snow', activeClass: 'bg-purple-600' },
-                ].map(({ mode, icon, label, activeClass }) => (
+                  { mode: 'risk', icon: <ShieldAlert className="w-3 sm:w-3.5 h-3 sm:h-3.5" />, label: 'Hazard Risk', shortLabel: 'Risk', activeClass: 'bg-rose-500/80' },
+                  { mode: 'wind', icon: <Wind className="w-3 sm:w-3.5 h-3 sm:h-3.5" />, label: 'Wind Speed', shortLabel: 'Wind', activeClass: 'bg-amber-500/80' },
+                  { mode: 'rain', icon: <CloudRain className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-sky-400" />, label: 'Rain', shortLabel: 'Rain', activeClass: 'bg-blue-600' },
+                  { mode: 'snow', icon: <Snowflake className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-purple-300" />, label: 'Snow', shortLabel: 'Snow', activeClass: 'bg-purple-600' },
+                ].map(({ mode, icon, label, shortLabel, activeClass }) => (
                   <button
                     key={mode}
                     onClick={() => setHeatmapMode(mode)}
-                    className={`shrink-0 flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg font-medium transition-all whitespace-nowrap ${
+                    className={`shrink-0 flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg font-medium transition-all whitespace-nowrap ${
                       heatmapMode === mode
                         ? `${activeClass} text-white font-bold shadow`
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     {icon}
-                    <span>{label}</span>
+                    <span className="hidden sm:inline">{label}</span>
+                    <span className="sm:hidden">{shortLabel}</span>
                   </button>
                 ))}
               </div>

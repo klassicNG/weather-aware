@@ -88,7 +88,15 @@ export default function RouteMap({
   isSidebarOpen = false,
 }) {
   const [showAllEtas, setShowAllEtas] = useState(false);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
   const recommendedRoute = routes.find((r) => r.is_recommended) || routes[0];
@@ -101,9 +109,9 @@ export default function RouteMap({
           route summaries on a map" with zero screen clutter or floating boxes.
       ========================================================================= */}
       {routes.length > 0 && (
-        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/95 backdrop-blur-md border-b border-white/10 px-2 py-1.5 flex items-center justify-between gap-1.5 shadow-2xl overflow-x-auto no-scrollbar pointer-events-auto">
+        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/95 backdrop-blur-md border-b border-white/10 px-2 sm:px-3 py-1.5 flex items-center justify-between gap-1.5 sm:gap-2 shadow-2xl overflow-x-auto sm:overflow-visible no-scrollbar pointer-events-auto">
           {/* Corridor Selection Tabs & Mobile Dispatch Opener */}
-          <div className="flex items-center gap-1.5 shrink-0 sm:flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 sm:flex-1 min-w-0">
             {/* Mobile Open Dispatch Button - Cleanly integrated inside top bar */}
             {onOpenDispatch && (
               <button
@@ -171,9 +179,9 @@ export default function RouteMap({
                     <span className="hidden sm:inline">{sum.total_distance_miles}m</span>
                     <span className="text-slate-500">•</span>
                     <span className="text-sky-300 whitespace-nowrap">Arr {etaTime}</span>
-                    <span className="hidden xs:inline text-slate-500">•</span>
+                    <span className="hidden sm:inline text-slate-500">•</span>
                     <span
-                      className={`hidden xs:inline font-bold ${
+                      className={`hidden sm:inline font-bold ${
                         sum.average_risk_score <= 1.5
                           ? 'text-emerald-400'
                           : sum.average_risk_score <= 2.5
@@ -357,8 +365,8 @@ export default function RouteMap({
                 </Tooltip>
               </Polyline>
 
-              {/* Pure Cartographic Typography along Highway (Only for selected route, and on larger screens to avoid mobile overlap) */}
-              {isSelected && midCoord && (
+              {/* Pure Cartographic Typography along Highway */}
+              {midCoord && (
                 <CircleMarker
                   center={midCoord}
                   radius={1}
@@ -370,7 +378,9 @@ export default function RouteMap({
                   <Tooltip permanent direction="top" offset={[0, -6]}>
                     <div
                       onClick={() => setActiveRouteId && setActiveRouteId(route.id)}
-                      className="hidden sm:flex cursor-pointer select-none font-mono text-[11px] font-extrabold uppercase carto-halo-text items-center gap-1.5 transition-transform hover:scale-105"
+                      className={`${
+                        isSelected ? 'flex' : 'hidden sm:flex'
+                      } cursor-pointer select-none font-mono text-[11px] font-extrabold uppercase carto-halo-text items-center gap-1.5 transition-transform hover:scale-105`}
                       style={{ color: palette.primary }}
                     >
                       <span
@@ -544,7 +554,7 @@ export default function RouteMap({
             // Only show labels for quarter milestones on desktop, single peak storm point, or when ETAs are toggled on
             const shouldShowBadge = showAllEtas
               ? (isMobile ? idx % 6 === 0 : idx % 4 === 0)
-              : (isPeakHazard && isCritical) || (!isMobile && isQuarterMilestone);
+              : isPeakHazard || (!isMobile && isQuarterMilestone);
 
             return (
               <CircleMarker
@@ -677,7 +687,7 @@ export default function RouteMap({
             >
               <Tooltip permanent direction="top" offset={[0, -8]}>
                 <div className="carto-halo-text text-[10px] sm:text-[11px] font-mono font-extrabold text-emerald-400 select-none">
-                  ▲ <span className="text-white">{origin ? origin.split(',')[0] : 'Origin'}</span>
+                  ▲ <span className="hidden sm:inline">ORIGIN: </span><span className="text-white">{origin || activeRoute.checkpoints[0]?.name || 'Origin'}</span>
                   <span className="text-slate-300 font-normal hidden sm:inline">
                     {' '}(Dep: {activeRoute.checkpoints[0]?.eta_iso ? new Date(activeRoute.checkpoints[0].eta_iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Now'})
                   </span>
@@ -701,7 +711,7 @@ export default function RouteMap({
             >
               <Tooltip permanent direction="top" offset={[0, -8]}>
                 <div className="carto-halo-text text-[10px] sm:text-[11px] font-mono font-extrabold text-rose-400 select-none">
-                  ▼ <span className="text-white">{destination ? destination.split(',')[0] : 'Destination'}</span>
+                  ▼ <span className="hidden sm:inline">DESTINATION: </span><span className="text-white">{destination || activeRoute.checkpoints[activeRoute.checkpoints.length - 1]?.name || 'Destination'}</span>
                   <span className="text-emerald-300 font-normal hidden sm:inline">
                     {' '}(ETA: {activeRoute.checkpoints[activeRoute.checkpoints.length - 1]?.eta_iso ? new Date(activeRoute.checkpoints[activeRoute.checkpoints.length - 1].eta_iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '--:--'})
                   </span>
