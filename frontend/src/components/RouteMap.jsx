@@ -109,9 +109,9 @@ export default function RouteMap({
           route summaries on a map" with zero screen clutter or floating boxes.
       ========================================================================= */}
       {routes.length > 0 && (
-        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/95 backdrop-blur-md border-b border-white/10 px-2 sm:px-3 py-1.5 flex items-center justify-between gap-1.5 sm:gap-2 shadow-2xl overflow-x-auto sm:overflow-visible no-scrollbar pointer-events-auto">
-          {/* Corridor Selection Tabs & Mobile Dispatch Opener */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 sm:flex-1 min-w-0">
+        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/95 backdrop-blur-md border-b border-white/10 px-2 sm:px-3 py-1.5 flex items-center justify-between gap-1.5 sm:gap-2 shadow-2xl pointer-events-auto">
+          {/* Corridor Selection Tabs & Mobile Dispatch Opener - Contained in flexible scrollable track */}
+          <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar flex items-center gap-1.5 sm:gap-2 pr-1">
             {/* Mobile Open Dispatch Button - Cleanly integrated inside top bar */}
             {onOpenDispatch && (
               <button
@@ -198,8 +198,8 @@ export default function RouteMap({
           </div>
 
           {/* Right Controls: Checkpoint Counter & ETA density toggle */}
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0">
-            <div className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded bg-slate-900/80 border border-white/10 text-[10px] text-sky-300 font-bold font-mono">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 text-[11px] font-mono text-slate-400 bg-[#070a12]/95 backdrop-blur-md pl-2 sm:pl-3 border-l border-white/10 z-10">
+            <div className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded bg-slate-900/80 border border-white/10 text-[10px] text-sky-300 font-bold font-mono whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
               <span className="hidden sm:inline">{activeRoute?.checkpoints?.length || 0} Checkpoints on Map</span>
               <span className="sm:hidden">{activeRoute?.checkpoints?.length || 0} CPs</span>
@@ -208,20 +208,20 @@ export default function RouteMap({
             <button
               type="button"
               onClick={() => setShowAllEtas(!showAllEtas)}
-              className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all border ${
+              className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all border whitespace-nowrap ${
                 showAllEtas
                   ? 'bg-sky-500 text-white border-sky-400 shadow'
                   : 'bg-slate-900 text-slate-400 hover:text-white border-white/10'
               }`}
               title="Toggle between Key Milestone ETAs and Every Checkpoint ETA along the highway"
             >
-              <Tag className="w-3 h-3" />
+              <Tag className="w-3 h-3 shrink-0" />
               <span className="hidden sm:inline">{showAllEtas ? 'All ETAs Visible' : 'Key ETAs'}</span>
               <span className="sm:hidden">{showAllEtas ? 'All' : 'ETAs'}</span>
             </button>
 
-            {/* Dynamic Telemetry Legend (Adapts to Active Mode: Risk, Wind, Rain, Snow) */}
-            <div className="hidden xl:flex items-center gap-2 text-[10px] pl-2 border-l border-white/10 font-mono">
+            {/* Dynamic Telemetry Legend (Adapts to Active Mode: Risk, Wind, Rain, Snow) - only on ultra-wide screens to prevent ribbon crowding */}
+            <div className="hidden 2xl:flex items-center gap-2 text-[10px] pl-2 border-l border-white/10 font-mono shrink-0 whitespace-nowrap">
               {heatmapMode === 'rain' && (
                 <>
                   <span className="text-sky-400 font-bold flex items-center gap-1">
