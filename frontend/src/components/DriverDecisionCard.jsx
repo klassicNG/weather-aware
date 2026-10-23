@@ -7,10 +7,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
-  Layers,
-  Sparkles,
 } from 'lucide-react';
-import { RISK_LEVELS } from '../utils/constants';
 
 export default function DriverDecisionCard({
   routes = [],
@@ -21,16 +18,28 @@ export default function DriverDecisionCard({
 }) {
   const [isMinimized, setIsMinimized] = useState(false);
 
-  if (!routes || routes.length === 0) return null;
-
-  const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
-  const recommendedRoute = routes.find((r) => r.is_recommended) || routes[0];
+  const hasRoutes = routes && routes.length > 0;
+  const activeRoute = hasRoutes
+    ? routes.find((r) => r.id === activeRouteId) || routes[0]
+    : null;
+  const recommendedRoute = hasRoutes
+    ? routes.find((r) => r.is_recommended) || routes[0]
+    : null;
   const isViewingRecommended = activeRoute?.id === recommendedRoute?.id;
 
   // Compute live corridor safety metrics for the currently selected departure / radar hour
   const sum = useMemo(() => {
     if (!activeRoute?.checkpoints || activeRoute.checkpoints.length === 0) {
-      return activeRoute?.summary || {};
+      return activeRoute?.summary || {
+        total_distance_miles: 0,
+        total_duration_hours: 0,
+        average_risk_score: 1.0,
+        no_travel_miles: 0,
+        severe_miles: 0,
+        high_miles: 0,
+        moderate_miles: 0,
+        low_miles: 0,
+      };
     }
 
     let noTravelM = 0;
@@ -55,7 +64,7 @@ export default function DriverDecisionCard({
               cp.risk?.risk_score || 1,
             ];
 
-      const [w, r, s, score] = data;
+      const [, , , score] = data;
       weightedRiskSum += segM * score;
 
       if (score === 5) noTravelM += segM;
@@ -98,11 +107,13 @@ export default function DriverDecisionCard({
     return `🟢 ALL CLEAR: Ideal corridor conditions with 0 No Travel and 0 Severe miles ${timeLabel} (Average risk ${sum.average_risk_score}/5.0).`;
   }, [sum, loadWeight, forecastHour]);
 
+  if (!hasRoutes || !activeRoute) return null;
+
   return (
-    <div className="absolute top-20 left-4 sm:left-6 z-[450] w-80 sm:w-96 pointer-events-auto">
-      <div className="glass-panel rounded-2xl p-4 shadow-2xl transition-all">
+    <div className="absolute top-28 sm:top-32 left-3 sm:left-6 z-[450] w-80 sm:w-96 max-h-[calc(100vh-170px)] flex flex-col pointer-events-auto">
+      <div className="glass-panel rounded-2xl p-3.5 sm:p-4 shadow-2xl transition-all flex flex-col overflow-hidden max-h-full">
         {/* Header Row */}
-        <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2">
             <span
               className={`p-1.5 rounded-lg ${
@@ -130,17 +141,27 @@ export default function DriverDecisionCard({
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            title={isMinimized ? 'Expand Corridor Details' : 'Minimize Card'}
           >
             {isMinimized ? (
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className="w-4 h-4 text-sky-400" />
             ) : (
-              <ChevronUp className="w-4 h-4" />
+              <ChevronUp className="w-4 h-4 text-slate-400" />
             )}
           </button>
         </div>
 
+        {isMinimized && (
+          <div className="text-[11px] text-slate-300 font-mono flex items-center justify-between pt-0.5">
+            <span>{sum.total_duration_hours} hrs • {sum.total_distance_miles} mi</span>
+            <span className={`font-bold ${sum.average_risk_score <= 1.5 ? 'text-emerald-400' : 'text-amber-400'}`}>
+              Risk {sum.average_risk_score}/5
+            </span>
+          </div>
+        )}
+
         {!isMinimized && (
-          <>
+          <div className="overflow-y-auto pr-1 space-y-2.5">
             {/* Core Driver Stats */}
             <div className="grid grid-cols-3 gap-2 my-3 text-center">
               <div className="bg-slate-900/80 p-2 rounded-xl border border-white/5">
@@ -157,8 +178,8 @@ export default function DriverDecisionCard({
                 </div>
               </div>
 
-              <div className="bg-slate-900/80 p-2 rounded-xl border border-white/5">
-                <div className="text-[10px] text-slate-400 uppercase font-medium">Trip Risk Score</div>
+              <div className="bg-slate-900/80 p-2 rounded-xl border border-white/5" title={`Corridor-wide average score: ${sum.average_risk_score}/5 across all ${sum.total_distance_miles} miles`}>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Avg Trip Risk</div>
                 <div
                   className={`text-sm font-extrabold font-mono mt-0.5 ${
                     sum.average_risk_score <= 1.5
@@ -171,13 +192,15 @@ export default function DriverDecisionCard({
                   {sum.average_risk_score} <span className="text-[10px] text-slate-500 font-normal">/ 5</span>
                 </div>
                 <div className="text-[9px] text-slate-400 font-sans">
-                  {sum.no_travel_miles > 0
-                    ? 'Shutdown Zone'
-                    : sum.severe_miles > 0
-                    ? 'Severe Zone'
-                    : sum.average_risk_score <= 1.2
-                    ? 'All Clear'
-                    : 'Elevated'}
+                  Peak: <span className={sum.no_travel_miles > 0 ? 'text-rose-400 font-bold' : sum.severe_miles > 0 ? 'text-rose-400 font-bold' : sum.average_risk_score <= 1.2 ? 'text-emerald-400' : 'text-amber-400'}>
+                    {sum.no_travel_miles > 0
+                      ? 'Shutdown'
+                      : sum.severe_miles > 0
+                      ? 'Severe'
+                      : sum.average_risk_score <= 1.2
+                      ? 'Clear'
+                      : 'Moderate'}
+                  </span>
                   {forecastHour > 0 ? ` (+${forecastHour}h)` : ''}
                 </div>
               </div>
@@ -272,7 +295,7 @@ export default function DriverDecisionCard({
                 ))}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

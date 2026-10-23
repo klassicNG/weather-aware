@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import GlassTopNav from './components/GlassTopNav';
 import RouteMap from './components/RouteMap';
-import DriverDecisionCard from './components/DriverDecisionCard';
+import DispatchSidebar from './components/DispatchSidebar';
 import ForecastSliderBar from './components/ForecastSliderBar';
 import RiskRulesModal from './components/RiskRulesModal';
-import { checkHealth, analyzeRoutes } from './services/api';
-import { AlertCircle, WifiOff } from 'lucide-react';
+import GuidedTourModal from './components/GuidedTourModal';
+import { analyzeRoutes } from './services/api';
+import { AlertCircle } from 'lucide-react';
 
 const getDefaultDepartureTime = () => {
   const now = new Date();
@@ -27,6 +27,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showRulesModal, setShowRulesModal] = useState(false);
+  const [showTourModal, setShowTourModal] = useState(false);
+  const [spotlightPoint, setSpotlightPoint] = useState(null);
 
   // Heatmap & Slider states
   const [forecastHour, setForecastHour] = useState(0);
@@ -40,83 +42,169 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Automatically refresh route risk when Storm Test or Rig Weight is changed
+  // Automatically refresh route risk when Storm Test, Rig Weight, or Interval is changed
   useEffect(() => {
     if (analysisData) {
       handleAnalyze();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stormStressTest, loadWeight]);
+  }, [stormStressTest, loadWeight, checkpointInterval]);
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (overrideParams = {}) => {
     setIsLoading(true);
     setError(null);
 
-    try {
-      const isoDeparture = new Date(departureTime).toISOString();
+    const currentOrigin = overrideParams.origin || origin;
+    const currentDestination = overrideParams.destination || destination;
+    const currentDepTime = overrideParams.departureTime || departureTime;
+    const currentWeight =
+      overrideParams.loadWeight !== undefined ? overrideParams.loadWeight : loadWeight;
+    const currentInterval =
+      overrideParams.checkpointInterval || checkpointInterval;
 
+    try {
+      const isoDeparture = new Date(currentDepTime).toISOString();
+
+      // Explicitly append ?simulate_storm=true when storm test is active
       const data = await analyzeRoutes({
-        origin,
-        destination,
+        origin: currentOrigin,
+        destination: currentDestination,
         departureTime: isoDeparture,
-        loadWeight,
-        checkpointInterval,
+        loadWeight: currentWeight,
+        checkpointInterval: currentInterval,
+        simulateStorm: stormStressTest,
       });
 
-      // Apply Storm Stress-Test simulation if enabled (simulates high winds to test 30k/40k lb overrides)
+      // "Storm Test" Edge Case Enforcement:
+      // Ensure high winds (48.0 mph and 40.0 mph) are rendered along checkpoints to visually demonstrate
+      // the >=30,000 lb (No Travel) and >40,000 lb (Severe) load rule escalations.
       let finalRoutes = data.routes || [];
-      if (stormStressTest && finalRoutes.length >= 2) {
-        finalRoutes = finalRoutes.map((route, rIdx) => {
-          if (rIdx === 1) {
-            // Add severe storm cell along Route 2
-            const updatedCps = route.checkpoints.map((cp, cpIdx) => {
-              if (cpIdx >= 4 && cpIdx <= 10) {
-                const windMph = 48.5; // In 45-54 mph band
-                const isHeavyLoad = loadWeight >= 30000;
-                const riskScore = isHeavyLoad ? 5 : 4;
-                const riskLevel = isHeavyLoad ? 'No Travel' : 'Severe';
-                const reason = `Storm Front: Wind ${windMph} mph + Load ${Number(loadWeight).toLocaleString()} lbs (${isHeavyLoad ? '≥30,000 lbs → No Travel' : 'Severe'})`;
+      if (stormStressTest && finalRoutes.length > 0) {
+        finalRoutes = finalRoutes.map((route) => {
+          const cps = route.checkpoints || [];
+          if (cps.length === 0) return route;
 
-                return {
-                  ...cp,
-                  weather: { ...cp.weather, wind_mph: windMph },
-                  risk: {
-                    ...cp.risk,
-                    risk_score: riskScore,
-                    risk_level: riskLevel,
-                    hazard_reason: reason,
-                  },
-                };
+          const midStart = Math.max(1, Math.floor(cps.length / 4));
+          const midEnd = Math.min(
+            cps.length - 1,
+            midStart + Math.max(2, Math.floor(cps.length / 3))
+          );
+
+          const updatedCps = cps.map((cp, cpIdx) => {
+            // High wind test cell (48.0 mph in 45-54 mph band)
+            if (cpIdx >= midStart && cpIdx <= midEnd) {
+              const windMph = 48.0;
+              const isHeavyLoad = currentWeight >= 30000;
+              const riskScore = isHeavyLoad ? 5 : 4;
+              const riskLevel = isHeavyLoad ? 'No Travel' : 'Severe';
+              const reason = isHeavyLoad
+                ? 'Load Rule Triggered: >30,000 lbs in 45-54 mph winds -> No Travel'
+                : 'Severe Wind 48.0 mph (45-54 mph)';
+
+              const stormForecast = [];
+              for (let h = 0; h < 49; h++) {
+                stormForecast.push([windMph, 0.35, 0.0, riskScore]);
               }
-              return cp;
-            });
 
-            const noTravelM = updatedCps.filter((c) => c.risk.risk_score === 5).reduce((acc, c) => acc + c.segment_miles, 0);
-            const severeM = updatedCps.filter((c) => c.risk.risk_score === 4).reduce((acc, c) => acc + c.segment_miles, 0);
+              return {
+                ...cp,
+                weather: {
+                  ...cp.weather,
+                  wind_mph: windMph,
+                  rain_in_hr: 0.35,
+                  snow_in_hr: 0.0,
+                },
+                risk: {
+                  ...cp.risk,
+                  risk_score: riskScore,
+                  risk_level: riskLevel,
+                  hazard_reason: reason,
+                },
+                forecast_48h: stormForecast,
+              };
+            }
 
-            return {
-              ...route,
-              checkpoints: updatedCps,
-              summary: {
-                ...route.summary,
-                no_travel_miles: Math.round(noTravelM),
-                severe_miles: Math.round(severeM),
-                average_risk_score: 2.8,
-              },
-            };
-          }
-          return route;
+            // 40 mph test cell on previous checkpoint if available (tests >40,000 lb rule)
+            if (cpIdx === Math.max(0, midStart - 1)) {
+              const windMph = 40.0;
+              const isSuperHeavy = currentWeight > 40000;
+              const riskScore = isSuperHeavy ? 4 : 3;
+              const riskLevel = isSuperHeavy ? 'Severe' : 'High';
+              const reason = isSuperHeavy
+                ? 'Load Rule Triggered: >40,000 lbs in 35-44 mph winds -> Severe'
+                : 'High Wind 40.0 mph';
+
+              const stormForecast = [];
+              for (let h = 0; h < 49; h++) {
+                stormForecast.push([windMph, 0.1, 0.0, riskScore]);
+              }
+
+              return {
+                ...cp,
+                weather: {
+                  ...cp.weather,
+                  wind_mph: windMph,
+                  rain_in_hr: 0.1,
+                  snow_in_hr: 0.0,
+                },
+                risk: {
+                  ...cp.risk,
+                  risk_score: riskScore,
+                  risk_level: riskLevel,
+                  hazard_reason: reason,
+                },
+                forecast_48h: stormForecast,
+              };
+            }
+
+            return cp;
+          });
+
+          const noTravelM = updatedCps
+            .filter((c) => c.risk.risk_score === 5)
+            .reduce((acc, c) => acc + (c.segment_miles || 0), 0);
+          const severeM = updatedCps
+            .filter((c) => c.risk.risk_score === 4)
+            .reduce((acc, c) => acc + (c.segment_miles || 0), 0);
+          const highM = updatedCps
+            .filter((c) => c.risk.risk_score === 3)
+            .reduce((acc, c) => acc + (c.segment_miles || 0), 0);
+          const modM = updatedCps
+            .filter((c) => c.risk.risk_score === 2)
+            .reduce((acc, c) => acc + (c.segment_miles || 0), 0);
+          const lowM = updatedCps
+            .filter((c) => c.risk.risk_score === 1)
+            .reduce((acc, c) => acc + (c.segment_miles || 0), 0);
+
+          const totM = Math.max(1, route.summary?.total_distance_miles || 1);
+          const weightedScore = (noTravelM * 5 + severeM * 4 + highM * 3 + modM * 2 + lowM * 1) / totM;
+
+          return {
+            ...route,
+            checkpoints: updatedCps,
+            summary: {
+              ...route.summary,
+              no_travel_miles: Math.round(noTravelM),
+              severe_miles: Math.round(severeM),
+              high_miles: Math.round(highM),
+              moderate_miles: Math.round(modM),
+              low_miles: Math.round(lowM),
+              average_risk_score: Number(weightedScore.toFixed(2)),
+            },
+          };
         });
       }
 
       setAnalysisData({ ...data, routes: finalRoutes });
-      setActiveRouteId(data.recommended_route_id || finalRoutes[0]?.id);
+      if (!activeRouteId || !finalRoutes.some((r) => r.id === activeRouteId)) {
+        setActiveRouteId(data.recommended_route_id || finalRoutes[0]?.id);
+      }
     } catch (err) {
       console.error('Route analysis failed:', err);
       setError(
         err.response?.data?.error ||
           err.message ||
-          'Failed to connect to Django routing service. Ensure backend is running.'
+          'Failed to connect to routing service. Ensure backend is running.'
       );
     } finally {
       setIsLoading(false);
@@ -124,66 +212,74 @@ export default function App() {
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#070a12] font-sans">
-      {/* 1. Fullscreen Living Map Backdrop */}
-      <RouteMap
-        routes={analysisData?.routes || []}
-        activeRouteId={activeRouteId}
-        setActiveRouteId={setActiveRouteId}
-        forecastHour={forecastHour}
-        heatmapMode={heatmapMode}
-        heatmapOpacity={heatmapOpacity}
-        heatmapVisible={heatmapVisible}
-      />
-
-      {/* 2. Floating Frosted Glass Navigation Bar */}
-      <GlassTopNav
+    <div className="relative w-screen h-screen overflow-hidden bg-[#070a12] font-sans flex flex-col lg:flex-row">
+      {/* 1. Left Workspace Sidebar: 1st-class Dispatch Setup, 3-Route Comparison, Mile-by-Mile Chart */}
+      <DispatchSidebar
         origin={origin}
         setOrigin={setOrigin}
         destination={destination}
         setDestination={setDestination}
         loadWeight={loadWeight}
         setLoadWeight={setLoadWeight}
+        departureTime={departureTime}
+        setDepartureTime={setDepartureTime}
+        checkpointInterval={checkpointInterval}
+        setCheckpointInterval={setCheckpointInterval}
         stormStressTest={stormStressTest}
         setStormStressTest={setStormStressTest}
         onSubmit={handleAnalyze}
         isLoading={isLoading}
         onOpenRules={() => setShowRulesModal(true)}
+        onOpenTour={() => setShowTourModal(true)}
+        routes={analysisData?.routes || []}
+        activeRouteId={activeRouteId}
+        setActiveRouteId={setActiveRouteId}
+        forecastHour={forecastHour}
+        onHoverCheckpoint={setSpotlightPoint}
       />
 
-      {/* 3. Driver's Safety Decision Card */}
-      {analysisData && (
-        <DriverDecisionCard
-          routes={analysisData.routes || []}
+      {/* 2. Right Canvas: Fullscreen Living Map + Bottom Radar Slider */}
+      <main className="relative flex-1 h-full overflow-hidden">
+        <RouteMap
+          routes={analysisData?.routes || []}
           activeRouteId={activeRouteId}
           setActiveRouteId={setActiveRouteId}
-          loadWeight={loadWeight}
           forecastHour={forecastHour}
-        />
-      )}
-
-      {/* 4. Floating 0-48h Corridor Forecast Slider */}
-      {analysisData && (
-        <ForecastSliderBar
-          departureTime={analysisData.departure_time || departureTime}
-          forecastHour={forecastHour}
-          setForecastHour={setForecastHour}
           heatmapMode={heatmapMode}
-          setHeatmapMode={setHeatmapMode}
-          opacity={heatmapOpacity}
-          setOpacity={setHeatmapOpacity}
-          visible={heatmapVisible}
-          setVisible={setHeatmapVisible}
-          activeRoute={analysisData.routes?.find((r) => r.id === activeRouteId) || analysisData.routes?.[0]}
+          heatmapOpacity={heatmapOpacity}
+          heatmapVisible={heatmapVisible}
+          loadWeight={loadWeight}
+          spotlightPoint={spotlightPoint}
+          origin={origin}
+          destination={destination}
         />
-      )}
 
-      {/* 5. Error Alert Overlay (if any) */}
+        {/* Floating 0-48h Corridor Forecast Slider (Docked at bottom of map) */}
+        {analysisData && (
+          <ForecastSliderBar
+            departureTime={analysisData.departure_time || departureTime}
+            forecastHour={forecastHour}
+            setForecastHour={setForecastHour}
+            heatmapMode={heatmapMode}
+            setHeatmapMode={setHeatmapMode}
+            opacity={heatmapOpacity}
+            setOpacity={setHeatmapOpacity}
+            visible={heatmapVisible}
+            setVisible={setHeatmapVisible}
+            activeRoute={
+              analysisData.routes?.find((r) => r.id === activeRouteId) ||
+              analysisData.routes?.[0]
+            }
+          />
+        )}
+      </main>
+
+      {/* 3. Error Alert Overlay (if any) */}
       {error && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[700] w-[90%] max-w-md p-3 rounded-2xl glass-panel border border-rose-500/50 text-rose-300 text-xs flex items-center gap-2.5 shadow-2xl">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[700] w-[90%] max-w-md p-3 rounded-2xl glass-panel border border-rose-500/50 text-rose-300 text-xs flex items-center gap-2.5 shadow-2xl">
           <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
           <div className="flex-1">
-            <span className="font-bold">Connection notice:</span> {error}
+            <span className="font-bold">Notice:</span> {error}
           </div>
           <button
             onClick={() => setError(null)}
@@ -194,10 +290,16 @@ export default function App() {
         </div>
       )}
 
-      {/* 6. Official PDF Rules Reference Modal */}
+      {/* 4. Official PDF Rules Reference Modal */}
       <RiskRulesModal
         isOpen={showRulesModal}
         onClose={() => setShowRulesModal(false)}
+      />
+
+      {/* 5. Interactive Guided Spotlight Tour */}
+      <GuidedTourModal
+        isOpen={showTourModal}
+        onClose={() => setShowTourModal(false)}
       />
     </div>
   );

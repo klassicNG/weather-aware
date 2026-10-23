@@ -144,15 +144,41 @@ export default function HeatmapCanvasLayer({
             rgb = [225, 29, 72]; // Rose/Purple (> 45 mph)
           }
           intensity = 0.4 + normalized * 0.55;
+        } else if (heatmapMode === 'rain') {
+          // Rain mode: evaluated in in/hr per Spotter AI rules (<0.10, 0.10-0.25, 0.25-0.50, 0.50-1.00, >1.00)
+          const normalized = Math.min(1.0, Math.max(0, rainInHr / 1.0));
+          if (rainInHr <= 0.02) {
+            rgb = [56, 189, 248]; // Light Cyan (< 0.10 in/hr)
+          } else if (rainInHr <= 0.25) {
+            rgb = [37, 99, 235]; // Moderate Blue (0.10-0.25 in/hr)
+          } else if (rainInHr <= 0.50) {
+            rgb = [29, 78, 216]; // Heavy Cobalt (0.25-0.50 in/hr)
+          } else if (rainInHr <= 1.0) {
+            rgb = [109, 40, 217]; // Severe Purple (0.50-1.00 in/hr)
+          } else {
+            rgb = [225, 29, 72]; // Extreme Torrential (> 1.00 in/hr)
+          }
+          intensity = rainInHr > 0.01 ? 0.45 + normalized * 0.5 : 0.1;
+        } else if (heatmapMode === 'snow') {
+          // Snow mode: evaluated in in/hr per Spotter AI rules (<0.5, 0.5-1.0, 1.0-2.0, 2.0-3.0, >3.0)
+          const normalized = Math.min(1.0, Math.max(0, snowInHr / 3.0));
+          if (snowInHr <= 0.1) {
+            rgb = [199, 210, 254]; // Light Lavender (< 0.5 in/hr)
+          } else if (snowInHr <= 1.0) {
+            rgb = [168, 85, 247]; // Moderate Purple (0.5-1.0 in/hr)
+          } else if (snowInHr <= 2.0) {
+            rgb = [147, 51, 234]; // Heavy Violet (1.0-2.0 in/hr)
+          } else if (snowInHr <= 3.0) {
+            rgb = [192, 38, 211]; // Severe Magenta (2.0-3.0 in/hr)
+          } else {
+            rgb = [244, 63, 94]; // Blizzard (> 3.0 in/hr)
+          }
+          intensity = snowInHr > 0.01 ? 0.45 + normalized * 0.5 : 0.1;
         } else if (heatmapMode === 'precip') {
-          // Precip: Rain and Snow
+          // Legacy combined fallback
           const totalPrecip = rainInHr + snowInHr;
           const normalized = Math.min(1.0, Math.max(0, totalPrecip / 1.5));
-          if (snowInHr > 0.2) {
-            rgb = [168, 85, 247]; // Purple for snow
-          } else {
-            rgb = [59, 130, 246]; // Blue for rain
-          }
+          rgb = snowInHr > 0.2 ? [168, 85, 247] : [59, 130, 246];
           intensity = totalPrecip > 0.05 ? 0.5 + normalized * 0.45 : 0.15;
         }
 

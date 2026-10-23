@@ -7,7 +7,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 60000,
+  timeout: 120000,
 });
 
 export const checkHealth = async () => {
@@ -21,13 +21,19 @@ export const analyzeRoutes = async ({
   departureTime,
   loadWeight,
   checkpointInterval,
+  simulateStorm = false,
 }) => {
-  const response = await apiClient.post('/api/routes/analyze/', {
+  const url = simulateStorm
+    ? '/api/routes/analyze/?simulate_storm=true'
+    : '/api/routes/analyze/';
+
+  const response = await apiClient.post(url, {
     origin,
     destination,
     departure_time: departureTime,
     load_weight: parseFloat(loadWeight) || 0,
     checkpoint_interval: parseFloat(checkpointInterval) || 50,
+    simulate_storm: Boolean(simulateStorm),
   });
   return response.data;
 };

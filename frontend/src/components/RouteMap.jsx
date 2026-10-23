@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -10,8 +10,42 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import HeatmapCanvasLayer from './HeatmapCanvasLayer';
-import { RISK_LEVELS } from '../utils/constants';
-import { Clock, Wind, CloudRain, Snowflake, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { RISK_LEVELS, evaluateLoadRule } from '../utils/constants';
+import {
+  Clock,
+  Wind,
+  CloudRain,
+  Snowflake,
+  AlertTriangle,
+  Tag,
+  ShieldCheck,
+  ChevronRight,
+} from 'lucide-react';
+
+// Distinct color palettes for all 3 corridors
+const ROUTE_PALETTES = [
+  {
+    primary: '#10b981', // Vibrant Emerald (Route 1)
+    glow: '#059669',
+    label: 'Primary Corridor',
+    badgeText: '🏆 SAFEST CORRIDOR',
+    badgeClass: 'text-emerald-400',
+  },
+  {
+    primary: '#06b6d4', // Electric Cyan (Route 2)
+    glow: '#0891b2',
+    label: 'Southern Bypass',
+    badgeText: 'ALT OPTION 1',
+    badgeClass: 'text-cyan-400',
+  },
+  {
+    primary: '#f59e0b', // Warm Amber (Route 3)
+    glow: '#d97706',
+    label: 'Northern Corridor',
+    badgeText: 'ALT OPTION 2',
+    badgeClass: 'text-amber-400',
+  },
+];
 
 // Automatically fits map bounds when routes change
 function MapAutoFitter({ routes }) {
@@ -31,7 +65,7 @@ function MapAutoFitter({ routes }) {
 
     if (latLngs.length > 0) {
       const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 8 });
+      map.fitBounds(bounds, { padding: [70, 70], maxZoom: 8 });
     }
   }, [routes, map]);
 
@@ -46,11 +80,167 @@ export default function RouteMap({
   heatmapMode = 'risk',
   heatmapOpacity = 0.75,
   heatmapVisible = true,
+  loadWeight = 45000,
+  spotlightPoint = null,
+  origin = 'Chicago, IL',
+  destination = 'Denver, CO',
 }) {
+  const [showAllEtas, setShowAllEtas] = useState(false);
+
   const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
+  const recommendedRoute = routes.find((r) => r.is_recommended) || routes[0];
 
   return (
-    <div className="absolute inset-0 w-full h-full bg-[#070a12] overflow-hidden">
+    <div className="relative w-full h-full bg-[#070a12] overflow-hidden flex flex-col">
+      {/* =========================================================================
+          FLUSH TOP CORRIDOR TELEMETRY RIBBON (Not a Card — 1-Line Flush Header)
+          Directly fulfills: "Show all routes, checkpoints, risk levels, ETAs, and
+          route summaries on a map" with zero screen clutter or floating boxes.
+      ========================================================================= */}
+      {routes.length > 0 && (
+        <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/92 backdrop-blur-md border-b border-white/10 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-2xl pointer-events-auto">
+          {/* Corridor Selection Tabs */}
+          <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+            {routes.map((route, idx) => {
+              const isSelected = route.id === activeRoute?.id;
+              const isRec = route.is_recommended || route.id === recommendedRoute?.id;
+              const palette = ROUTE_PALETTES[idx % ROUTE_PALETTES.length];
+              const sum = route.summary || {};
+
+              let etaTime = '--:--';
+              if (sum.eta_destination) {
+                try {
+                  const d = new Date(sum.eta_destination);
+                  etaTime = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                } catch {
+                  etaTime = sum.eta_destination;
+                }
+              }
+
+              return (
+                <button
+                  key={route.id}
+                  type="button"
+                  onClick={() => setActiveRouteId && setActiveRouteId(route.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border ${
+                    isSelected
+                      ? 'bg-slate-800/95 border-white/25 text-white shadow-lg ring-1 ring-sky-400/50'
+                      : 'bg-slate-950/60 hover:bg-slate-900 border-white/5 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: palette.primary }}
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold tracking-tight text-white whitespace-nowrap">
+                      {route.name}
+                    </span>
+                    <span className={`text-[10px] font-bold ${palette.badgeClass}`}>
+                      [{isRec ? '★ RECOMMENDED' : `ALT ${idx}`}]
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[11px] text-slate-300 border-l border-white/10 pl-2">
+                    <span className="font-bold text-slate-200">{sum.total_duration_hours}h</span>
+                    <span className="text-slate-500">•</span>
+                    <span>{sum.total_distance_miles}m</span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-sky-300">Arr {etaTime}</span>
+                    <span className="text-slate-500">•</span>
+                    <span
+                      className={`font-bold ${
+                        sum.average_risk_score <= 1.5
+                          ? 'text-emerald-400'
+                          : sum.average_risk_score <= 2.5
+                          ? 'text-amber-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {sum.average_risk_score <= 1.5 ? 'Clear' : sum.max_risk_level}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right Controls: Checkpoint Counter, In-situ ETA density toggle & Quick Risk Legend */}
+          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400 pl-2">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-900/80 border border-white/10 text-[10px] text-sky-300 font-bold font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+              <span>{activeRoute?.checkpoints?.length || 0} Checkpoints on Map</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAllEtas(!showAllEtas)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all border ${
+                showAllEtas
+                  ? 'bg-sky-500 text-white border-sky-400 shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white border-white/10'
+              }`}
+              title="Toggle between Key Milestone ETAs and Every Checkpoint ETA along the highway"
+            >
+              <Tag className="w-3 h-3" />
+              <span>{showAllEtas ? 'All ETAs Visible' : 'Key ETAs'}</span>
+            </button>
+
+            {/* Dynamic Telemetry Legend (Adapts to Active Mode: Risk, Wind, Rain, Snow) */}
+            <div className="hidden xl:flex items-center gap-2 text-[10px] pl-2 border-l border-white/10 font-mono">
+              {heatmapMode === 'rain' && (
+                <>
+                  <span className="text-sky-400 font-bold flex items-center gap-1">
+                    <CloudRain className="w-3 h-3" /> Rain:
+                  </span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-sky-400" /> &lt;0.10 in/h</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> 0.25</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-700" /> 0.50</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-600" /> 1.00</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> &gt;1.00 in/h</span>
+                </>
+              )}
+              {heatmapMode === 'snow' && (
+                <>
+                  <span className="text-purple-300 font-bold flex items-center gap-1">
+                    <Snowflake className="w-3 h-3" /> Snow:
+                  </span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-200" /> &lt;0.5 in/h</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-400" /> 1.0</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-600" /> 2.0</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-fuchsia-600" /> 3.0</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> &gt;3.0 (Blizzard)</span>
+                </>
+              )}
+              {heatmapMode === 'wind' && (
+                <>
+                  <span className="text-amber-400 font-bold flex items-center gap-1">
+                    <Wind className="w-3 h-3" /> Wind:
+                  </span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> &lt;20 mph</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> 25–34</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-400" /> 35–44</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> &gt;45 mph</span>
+                </>
+              )}
+              {heatmapMode === 'risk' && (
+                <>
+                  <span className="text-slate-400 font-bold">Risk:</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Low</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Mod</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-400" /> High</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Sev</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-600" /> Stop</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          LEAFLET FULLSCREEN CANVAS
+      ========================================================================= */}
       <MapContainer
         center={[39.8283, -98.5795]} // Center of USA
         zoom={5}
@@ -58,7 +248,7 @@ export default function RouteMap({
         className="w-full h-full"
         attributionControl={false}
       >
-        {/* Esri World Dark Gray Canvas: 100% Free, Zero Watermarks, Sleek Dark Minimalist */}
+        {/* Esri World Dark Gray Canvas: 100% Free, Clean Dark Aesthetics */}
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
           maxZoom={16}
@@ -81,22 +271,30 @@ export default function RouteMap({
           visible={heatmapVisible}
         />
 
-        {/* Polylines for all 3 routes */}
-        {routes.map((route) => {
+        {/* =====================================================================
+            1. PURE CARTOGRAPHIC HIGHWAY POLYLINES & IN-SITU LABELS (ZERO BOXES)
+        ===================================================================== */}
+        {routes.map((route, rIdx) => {
           const isSelected = route.id === activeRoute?.id;
+          const isRecommended = route.is_recommended || route.id === recommendedRoute?.id;
+          const palette = ROUTE_PALETTES[rIdx % ROUTE_PALETTES.length];
           const coords = route.geometry?.coordinates?.map(([lon, lat]) => [lat, lon]) || [];
           if (coords.length === 0) return null;
 
+          // Midpoint coordinate along route polyline for Pure Cartographic Typography
+          const midCoord = coords[Math.floor(coords.length / 2)];
+          const sum = route.summary || {};
+
           return (
             <React.Fragment key={route.id}>
-              {/* Outer glow line for selected route */}
-              {isSelected && (
+              {/* Outer glow halo for selected route */}
+              {(isSelected || isRecommended) && (
                 <Polyline
                   positions={coords}
                   pathOptions={{
-                    color: route.is_recommended ? '#0284c7' : '#0ea5e9',
-                    weight: 10,
-                    opacity: 0.35,
+                    color: isSelected ? palette.primary : palette.glow,
+                    weight: isSelected ? 12 : 7,
+                    opacity: isSelected ? 0.4 : 0.2,
                     lineCap: 'round',
                   }}
                 />
@@ -106,116 +304,385 @@ export default function RouteMap({
               <Polyline
                 positions={coords}
                 pathOptions={{
-                  color: isSelected
-                    ? (route.is_recommended ? '#38bdf8' : '#38bdf8')
-                    : '#475569',
-                  weight: isSelected ? 5.5 : 3,
-                  opacity: isSelected ? 0.95 : 0.4,
-                  dashArray: isSelected ? null : '5, 8',
+                  color: palette.primary,
+                  weight: isSelected ? 6.5 : 4.0,
+                  opacity: isSelected ? 0.95 : 0.65,
+                  dashArray: isSelected ? null : isRecommended ? null : '6, 8',
+                  lineCap: 'round',
+                  lineJoin: 'round',
                 }}
                 eventHandlers={{
-                  click: () => setActiveRouteId && setActiveRouteId(route.id),
+                  click: () => {
+                    if (setActiveRouteId) {
+                      setActiveRouteId(route.id);
+                    }
+                  },
                 }}
               >
                 <Tooltip sticky>
-                  <div className="text-xs font-sans p-1">
-                    <span className="font-bold text-white">{route.name}</span>
-                    {route.is_recommended && (
-                      <span className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">
-                        RECOMMENDED
-                      </span>
-                    )}
-                    <div className="text-gray-400 text-[11px] mt-0.5">
-                      {route.summary?.total_distance_miles} mi • {route.summary?.total_duration_hours} hrs
-                    </div>
+                  <div className="carto-halo-text text-xs text-white p-1">
+                    <span className="font-extrabold" style={{ color: palette.primary }}>
+                      {route.name}
+                    </span>
+                    <span className="text-slate-300 font-mono block">
+                      {sum.total_distance_miles} mi • {sum.total_duration_hours} hrs • {isRecommended ? 'Safest' : 'Alternative'}
+                    </span>
                   </div>
                 </Tooltip>
               </Polyline>
+
+              {/* Pure Cartographic Typography along Highway (No Card, Zero Box) */}
+              {midCoord && (
+                <CircleMarker
+                  center={midCoord}
+                  radius={1}
+                  pathOptions={{ opacity: 0, fillOpacity: 0 }}
+                  eventHandlers={{
+                    click: () => setActiveRouteId && setActiveRouteId(route.id),
+                  }}
+                >
+                  <Tooltip permanent direction="top" offset={[0, -6]}>
+                    <div
+                      onClick={() => setActiveRouteId && setActiveRouteId(route.id)}
+                      className="cursor-pointer select-none font-mono text-[11px] font-extrabold uppercase carto-halo-text flex items-center gap-1.5 transition-transform hover:scale-105"
+                      style={{ color: palette.primary }}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: palette.primary }}
+                      />
+                      <span>{route.name}</span>
+                      <span className="text-slate-200 font-normal">
+                        ({sum.total_duration_hours}h • {sum.total_distance_miles}m)
+                      </span>
+                      <span className="text-white font-bold">
+                        {isRecommended ? '★ SAFEST' : `ALT ${rIdx}`}
+                      </span>
+                    </div>
+                  </Tooltip>
+                </CircleMarker>
+              )}
             </React.Fragment>
           );
         })}
 
-        {/* Checkpoint Markers for the Selected Route */}
-        {activeRoute &&
-          activeRoute.checkpoints?.map((cp, idx) => {
-            const riskScore = cp.risk?.risk_score || 1;
-            const riskInfo = RISK_LEVELS[riskScore] || RISK_LEVELS[1];
-            const isHazard = riskScore >= 2;
-            const isCritical = riskScore >= 4;
+        {/* =====================================================================
+            2. COLOR-CODED RISK HIGHWAY SEGMENTS (Road itself shows danger)
+        ===================================================================== */}
+        {activeRoute?.checkpoints && activeRoute.checkpoints.length > 1 && (
+          activeRoute.checkpoints.slice(0, -1).map((cp, idx) => {
+            const nextCp = activeRoute.checkpoints[idx + 1];
+            const dataAtHour =
+              cp.forecast_48h && cp.forecast_48h[forecastHour]
+                ? cp.forecast_48h[forecastHour]
+                : [
+                    cp.weather?.wind_mph ?? 0,
+                    cp.weather?.rain_in_hr ?? 0,
+                    cp.weather?.snow_in_hr ?? 0,
+                    cp.risk?.risk_score ?? 1,
+                  ];
+
+            const [windMph, , , baseScore] = dataAtHour;
+            const loadRule = evaluateLoadRule(windMph, loadWeight);
+            const effectiveScore = loadRule.triggered
+              ? Math.max(baseScore, loadRule.score)
+              : baseScore;
+
+            if (effectiveScore < 3) return null;
+
+            const riskInfo = RISK_LEVELS[effectiveScore] || RISK_LEVELS[1];
+
+            return (
+              <Polyline
+                key={`hazard-seg-${activeRoute.id}-${idx}`}
+                positions={[
+                  [cp.lat, cp.lon],
+                  [nextCp.lat, nextCp.lon],
+                ]}
+                pathOptions={{
+                  color: riskInfo.color,
+                  weight: 8.5,
+                  opacity: 0.95,
+                  lineCap: 'round',
+                }}
+              />
+            );
+          })
+        )}
+
+        {/* =====================================================================
+            3. CHECKPOINTS ACROSS ALL 3 ROUTES & IN-SITU MILEPOST ETAs
+        ===================================================================== */}
+        {routes.map((route, rIdx) => {
+          const isSelected = route.id === activeRoute?.id;
+
+          // Non-active routes: clean subtle colored nodes along the lines
+          if (!isSelected) {
+            return route.checkpoints?.map((cp, cpIdx) => {
+              const score = cp.risk?.risk_score || 1;
+              const riskInfo = RISK_LEVELS[score] || RISK_LEVELS[1];
+              return (
+                <CircleMarker
+                  key={`alt-cp-${route.id}-${cpIdx}`}
+                  center={[cp.lat, cp.lon]}
+                  radius={3.0}
+                  pathOptions={{
+                    fillColor: riskInfo.color,
+                    fillOpacity: 0.65,
+                    color: '#ffffff',
+                    weight: 0.8,
+                  }}
+                  eventHandlers={{
+                    click: () => setActiveRouteId && setActiveRouteId(route.id),
+                  }}
+                >
+                  <Tooltip>
+                    <span className="carto-halo-text text-[10px] text-white font-mono">
+                      {route.name}: M{Math.round(cp.distance_from_origin_miles)} ({riskInfo.name})
+                    </span>
+                  </Tooltip>
+                </CircleMarker>
+              );
+            });
+          }
+
+          // Active route: interactive checkpoints + clean in-line cartographic timestamps
+          const totalCps = route.checkpoints?.length || 1;
+
+          // Find single worst peak hazard checkpoint along the route (avoids spamming 100 hazard labels)
+          let peakHazardIdx = -1;
+          let worstWind = 0;
+          route.checkpoints?.forEach((c, cIdx) => {
+            const data =
+              c.forecast_48h && c.forecast_48h[forecastHour]
+                ? c.forecast_48h[forecastHour]
+                : [c.weather?.wind_mph || 0, 0, 0, 1];
+            const [w] = data;
+            const lr = evaluateLoadRule(w, loadWeight);
+            const eff = lr.triggered ? Math.max(data[3], lr.score) : data[3];
+            if (eff >= 3 && w > worstWind) {
+              worstWind = w;
+              peakHazardIdx = cIdx;
+            }
+          });
+
+          // Milestones: exactly 3 clean quarter markers along the entire trip (at 25%, 50%, 75%)
+          const m25 = Math.max(1, Math.floor(totalCps * 0.25));
+          const m50 = Math.max(2, Math.floor(totalCps * 0.5));
+          const m75 = Math.max(3, Math.floor(totalCps * 0.75));
+          const quarterMilestones = new Set([m25, m50, m75]);
+
+          return route.checkpoints?.map((cp, idx) => {
+            const dataAtHour =
+              cp.forecast_48h && cp.forecast_48h[forecastHour]
+                ? cp.forecast_48h[forecastHour]
+                : [
+                    cp.weather?.wind_mph ?? 0,
+                    cp.weather?.rain_in_hr ?? 0,
+                    cp.weather?.snow_in_hr ?? 0,
+                    cp.risk?.risk_score ?? 1,
+                  ];
+
+            const [windMph, rainInHr, snowInHr, baseRiskScore] = dataAtHour;
+            const loadRule = evaluateLoadRule(windMph, loadWeight);
+            const effectiveScore = loadRule.triggered
+              ? Math.max(baseRiskScore, loadRule.score)
+              : baseRiskScore;
+
+            const riskInfo = RISK_LEVELS[effectiveScore] || RISK_LEVELS[1];
+            const isHazard = effectiveScore >= 2;
+            const isCritical = effectiveScore >= 4;
+
+            const baseEta = cp.eta_iso ? new Date(cp.eta_iso) : null;
+            const exactEta = baseEta
+              ? new Date(baseEta.getTime() + forecastHour * 3600000)
+              : null;
+            const timeStr = exactEta
+              ? exactEta.toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : '--:--';
+            const dateStr = exactEta
+              ? exactEta.toLocaleDateString([], {
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : '';
+
+            const isOrigin = idx === 0;
+            const isDestination = idx === totalCps - 1;
+            const isQuarterMilestone = quarterMilestones.has(idx);
+            const isPeakHazard = idx === peakHazardIdx;
+
+            // Only show labels for quarter milestones, single peak storm point, or if showAllEtas is on (spaced every 4th)
+            const shouldShowBadge =
+              (showAllEtas && idx % 4 === 0) || isQuarterMilestone || isPeakHazard;
 
             return (
               <CircleMarker
-                key={`${activeRoute.id}-cp-${cp.id || idx}`}
+                key={`${route.id}-cp-${cp.id || idx}`}
                 center={[cp.lat, cp.lon]}
-                radius={isCritical ? 7.5 : isHazard ? 5.5 : 3.5}
+                radius={isCritical ? 7.5 : isHazard ? 5.5 : 4.0}
                 pathOptions={{
                   fillColor: riskInfo.color,
-                  fillOpacity: isHazard ? 1.0 : 0.6,
-                  color: isCritical ? '#ffffff' : '#0f172a',
-                  weight: isCritical ? 2.5 : 1,
+                  fillOpacity: isHazard ? 1.0 : 0.7,
+                  color: isCritical ? '#ffffff' : '#070a12',
+                  weight: isCritical ? 2.5 : 1.2,
+                }}
+                eventHandlers={{
+                  mouseover: (e) => e.target.openPopup(),
+                  click: (e) => e.target.openPopup(),
                 }}
               >
+                {/* Pure In-Situ Milestone Timestamp (No Box, Pure Typography) */}
+                {!isOrigin && !isDestination && shouldShowBadge && (
+                  <Tooltip permanent direction="bottom" offset={[0, 6]}>
+                    <div
+                      className={`carto-halo-text text-[10px] font-mono font-bold select-none whitespace-nowrap ${
+                        isPeakHazard && isCritical
+                          ? 'text-rose-400 animate-pulse'
+                          : isHazard
+                          ? 'text-amber-300'
+                          : 'text-slate-300'
+                      }`}
+                    >
+                      {isPeakHazard && isCritical ? (
+                        <span>
+                          🛑 PEAK STORM: M{Math.round(cp.distance_from_origin_miles)} ({Number(windMph).toFixed(0)}mph {riskInfo.name})
+                        </span>
+                      ) : (
+                        <span>
+                          M{Math.round(cp.distance_from_origin_miles)} • {timeStr}
+                        </span>
+                      )}
+                    </div>
+                  </Tooltip>
+                )}
+
+                {/* Minimalist Inspection Popup on Click */}
                 <Popup>
-                  <div className="min-w-[230px] text-xs font-sans text-slate-100">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
-                      <div className="font-bold text-sm text-white">
-                        {cp.name || `Mile ${cp.distance_from_origin_miles}`}
+                  <div className="min-w-[220px] text-xs font-sans text-slate-100">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5 mb-2">
+                      <div>
+                        <div className="font-extrabold text-sm text-white flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: riskInfo.color }} />
+                          <span>Checkpoint #{idx + 1}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Highway Mile {Number(cp.distance_from_origin_miles).toFixed(1)}
+                        </div>
                       </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${riskInfo.bgClass}`}
-                      >
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${riskInfo.bgClass}`}>
                         {riskInfo.name}
                       </span>
                     </div>
 
-                    {/* ETA & Distance */}
-                    <div className="flex items-center justify-between text-slate-300 text-[11px] mb-2.5">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-sky-400" />
-                        <span>
-                          {new Date(cp.eta_iso).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-                      <span className="font-mono text-slate-400">
-                        Mile {cp.distance_from_origin_miles}
-                      </span>
+                    <div className="text-[11px] text-slate-300 mb-2 flex items-center justify-between font-mono">
+                      <span className="text-sky-400">ETA: {dateStr}, {timeStr}</span>
+                      <span className="text-slate-400">Mile {Number(cp.distance_from_origin_miles).toFixed(1)}</span>
                     </div>
 
-                    {/* Conditions Box */}
-                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-white/5 space-y-1.5">
-                      <div className="grid grid-cols-3 gap-1.5 text-center font-mono text-[11px]">
-                        <div className="bg-slate-800/60 p-1.5 rounded-lg">
-                          <Wind className="w-3.5 h-3.5 mx-auto text-amber-400 mb-0.5" />
-                          <div className="font-bold text-slate-200">{cp.weather?.wind_mph}</div>
-                          <div className="text-[9px] text-slate-500">mph</div>
-                        </div>
-                        <div className="bg-slate-800/60 p-1.5 rounded-lg">
-                          <CloudRain className="w-3.5 h-3.5 mx-auto text-sky-400 mb-0.5" />
-                          <div className="font-bold text-slate-200">{cp.weather?.rain_in_hr}</div>
-                          <div className="text-[9px] text-slate-500">in/h</div>
-                        </div>
-                        <div className="bg-slate-800/60 p-1.5 rounded-lg">
-                          <Snowflake className="w-3.5 h-3.5 mx-auto text-purple-400 mb-0.5" />
-                          <div className="font-bold text-slate-200">{cp.weather?.snow_in_hr}</div>
-                          <div className="text-[9px] text-slate-500">in/h</div>
-                        </div>
+                    <div className="grid grid-cols-3 gap-1 text-center font-mono text-[10px] bg-slate-950 p-2 rounded-lg border border-white/5">
+                      <div>
+                        <div className="text-amber-400 font-bold">{Number(windMph).toFixed(1)}</div>
+                        <div className="text-slate-500">mph wind</div>
                       </div>
-
-                      {cp.risk?.hazard_reason && (
-                        <div className="text-[11px] text-slate-300 pt-1.5 border-t border-white/5 leading-relaxed">
-                          {cp.risk.hazard_reason}
-                        </div>
-                      )}
+                      <div>
+                        <div className="text-sky-400 font-bold">{Number(rainInHr).toFixed(2)}</div>
+                        <div className="text-slate-500">in/h rain</div>
+                      </div>
+                      <div>
+                        <div className="text-purple-400 font-bold">{Number(snowInHr).toFixed(2)}</div>
+                        <div className="text-slate-500">in/h snow</div>
+                      </div>
                     </div>
+
+                    {loadRule.triggered && (
+                      <div className="mt-2 p-1.5 rounded bg-rose-500/20 border border-rose-500/60 text-rose-200 text-[10px] font-bold">
+                        ⚠ {loadRule.text}
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </CircleMarker>
             );
-          })}
+          });
+        })}
+
+        {/* =====================================================================
+            4. SPOTLIGHT MARKER (Chart Scrubbing Highlight)
+        ===================================================================== */}
+        {spotlightPoint && (
+          <CircleMarker
+            center={[spotlightPoint.lat, spotlightPoint.lon]}
+            radius={10}
+            pathOptions={{
+              fillColor: '#38bdf8',
+              fillOpacity: 0.8,
+              color: '#ffffff',
+              weight: 2.5,
+            }}
+          >
+            <Tooltip permanent direction="top" offset={[0, -10]}>
+              <div className="carto-halo-text text-xs font-mono font-extrabold text-sky-300 select-none">
+                📍 {spotlightPoint.name} ({spotlightPoint.windMph.toFixed(0)} mph)
+              </div>
+            </Tooltip>
+          </CircleMarker>
+        )}
+
+        {/* =====================================================================
+            5. ORIGIN & DESTINATION IN-SITU MARKERS (Pure Typography Halos)
+        ===================================================================== */}
+        {activeRoute?.checkpoints && activeRoute.checkpoints.length > 0 && (
+          <>
+            {/* Origin */}
+            <CircleMarker
+              center={[activeRoute.checkpoints[0].lat, activeRoute.checkpoints[0].lon]}
+              radius={7}
+              pathOptions={{
+                fillColor: '#10b981',
+                fillOpacity: 1,
+                color: '#ffffff',
+                weight: 2,
+              }}
+            >
+              <Tooltip permanent direction="top" offset={[0, -8]}>
+                <div className="carto-halo-text text-[11px] font-mono font-extrabold text-emerald-400 select-none">
+                  ▲ ORIGIN: <span className="text-white">{origin || activeRoute.checkpoints[0]?.name || 'Origin'}</span>
+                  <span className="text-slate-300 font-normal">
+                    {' '}(Dep: {activeRoute.checkpoints[0]?.eta_iso ? new Date(activeRoute.checkpoints[0].eta_iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Now'})
+                  </span>
+                </div>
+              </Tooltip>
+            </CircleMarker>
+
+            {/* Destination */}
+            <CircleMarker
+              center={[
+                activeRoute.checkpoints[activeRoute.checkpoints.length - 1].lat,
+                activeRoute.checkpoints[activeRoute.checkpoints.length - 1].lon,
+              ]}
+              radius={7}
+              pathOptions={{
+                fillColor: '#f43f5e',
+                fillOpacity: 1,
+                color: '#ffffff',
+                weight: 2,
+              }}
+            >
+              <Tooltip permanent direction="top" offset={[0, -8]}>
+                <div className="carto-halo-text text-[11px] font-mono font-extrabold text-rose-400 select-none">
+                  ▼ DESTINATION: <span className="text-white">{destination || activeRoute.checkpoints[activeRoute.checkpoints.length - 1]?.name || 'Destination'}</span>
+                  <span className="text-emerald-300 font-normal">
+                    {' '}(ETA: {activeRoute.checkpoints[activeRoute.checkpoints.length - 1]?.eta_iso ? new Date(activeRoute.checkpoints[activeRoute.checkpoints.length - 1].eta_iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '--:--'})
+                  </span>
+                </div>
+              </Tooltip>
+            </CircleMarker>
+          </>
+        )}
       </MapContainer>
     </div>
   );

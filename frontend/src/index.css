@@ -114,6 +114,23 @@ input[type="range"] {
   accent-color: #38bdf8;
 }
 
+/* Custom transparent Leaflet tooltips for on-map badges */
+.leaflet-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.leaflet-tooltip-top:before,
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+  border-top-color: transparent !important;
+  border-bottom-color: transparent !important;
+  border-left-color: transparent !important;
+  border-right-color: transparent !important;
+}
+
 /* Clean scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
@@ -126,3 +143,16 @@ input[type="range"] {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 10px;
 }
+
+/* Pure Cartographic Typography with Dark Halos (Zero-Box) */
+.carto-halo-text {
+  text-shadow:
+    -1.5px -1.5px 0 #070a12,
+     1.5px -1.5px 0 #070a12,
+    -1.5px  1.5px 0 #070a12,
+     1.5px  1.5px 0 #070a12,
+     0px 2px 4px rgba(0, 0, 0, 0.95),
+     0px 0px 8px rgba(0, 0, 0, 0.9);
+  letter-spacing: 0.04em;
+}
+

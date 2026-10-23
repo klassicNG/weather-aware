@@ -46,6 +46,10 @@ def analyze_routes(request):
 
     load_weight = validated_data.get("load_weight", 0.0)
     checkpoint_interval = validated_data.get("checkpoint_interval", 50.0)
+    simulate_storm = (
+        request.query_params.get("simulate_storm", "").lower() in ("true", "1")
+        or request.data.get("simulate_storm") in (True, "true", "1")
+    )
 
     try:
         result = process_route_analysis(
@@ -53,7 +57,8 @@ def analyze_routes(request):
             destination_input=destination,
             departure_time_iso=departure_time,
             load_weight=load_weight,
-            checkpoint_interval_miles=checkpoint_interval
+            checkpoint_interval_miles=checkpoint_interval,
+            simulate_storm=simulate_storm,
         )
         return Response(result, status=status.HTTP_200_OK)
     except Exception as e:

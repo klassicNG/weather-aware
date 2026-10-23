@@ -7,10 +7,10 @@ import {
   EyeOff,
   Wind,
   CloudRain,
+  Snowflake,
   ShieldAlert,
   ChevronDown,
   ChevronUp,
-  HelpCircle,
 } from 'lucide-react';
 
 export default function ForecastSliderBar({
@@ -33,7 +33,8 @@ export default function ForecastSliderBar({
   // Formatted date string for current forecast hour
   const getOffsetTimestamp = () => {
     try {
-      const baseDate = departureTime ? new Date(departureTime) : new Date();
+      const baseDate = departureTime ? new Date(departureTime) : null;
+      if (!baseDate) return '';
       const offsetDate = new Date(baseDate.getTime() + forecastHour * 3600 * 1000);
       return offsetDate.toLocaleString('en-US', {
         weekday: 'short',
@@ -55,12 +56,17 @@ export default function ForecastSliderBar({
         level: 'Safe',
         badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
         text: 'Clear driving conditions along your route.',
+        worstWind: 0,
+        worstRain: 0,
+        worstSnow: 0,
+        maxScore: 1,
       };
     }
 
     let maxScore = 1;
     let worstWind = 0;
-    let worstPrecip = 0;
+    let worstRain = 0;
+    let worstSnow = 0;
 
     activeRoute.checkpoints.forEach((cp) => {
       const data =
@@ -71,41 +77,83 @@ export default function ForecastSliderBar({
       const [w, r, s, score] = data;
       if (score > maxScore) maxScore = score;
       if (w > worstWind) worstWind = w;
-      if (r + s > worstPrecip) worstPrecip = r + s;
+      if (r > worstRain) worstRain = r;
+      if (s > worstSnow) worstSnow = s;
     });
+
+    const precipContext =
+      worstSnow > 0.05 && worstRain > 0.05
+        ? `(${worstWind.toFixed(0)} mph wind, ${worstRain.toFixed(2)} in/h rain, ${worstSnow.toFixed(1)} in/h snow)`
+        : worstSnow > 0.05
+        ? `(${worstWind.toFixed(0)} mph wind, ${worstSnow.toFixed(1)} in/h snow)`
+        : worstRain > 0.05
+        ? `(${worstWind.toFixed(0)} mph wind, ${worstRain.toFixed(2)} in/h rain)`
+        : `(${worstWind.toFixed(0)} mph wind)`;
 
     if (maxScore >= 5) {
       return {
         level: 'Mandatory Shutdown Hazard',
         badgeClass: 'bg-rose-950/90 text-rose-200 border-rose-500/60 shadow-lg shadow-rose-900/40 animate-pulse',
-        text: `🛑 SHUTDOWN HAZARD AT +${forecastHour}h (${worstWind} mph wind/storm). Active cell along corridor for heavy rigs.`,
+        text: `🛑 SHUTDOWN HAZARD AT +${forecastHour}h ${precipContext}. Active extreme cell along corridor for heavy rigs.`,
+        worstWind,
+        worstRain,
+        worstSnow,
+        maxScore,
       };
     }
     if (maxScore === 4) {
       return {
-        level: 'Severe Weather on Corridor',
+        level: worstSnow > 1.0 ? 'Severe Snow Storm on Corridor' : 'Severe Weather on Corridor',
         badgeClass: 'bg-red-950/80 text-red-200 border-red-500/50',
-        text: `🔴 SEVERE STORM DETECTED AT +${forecastHour}h (${worstWind} mph wind). Active crosswind cell on open highway.`,
+        text: `🔴 SEVERE WEATHER AT +${forecastHour}h ${precipContext}. Active weather cell on open highway.`,
+        worstWind,
+        worstRain,
+        worstSnow,
+        maxScore,
       };
     }
     if (maxScore === 3) {
+      const title =
+        worstSnow >= 1.0
+          ? 'Heavy Snow Advisory'
+          : worstRain >= 0.25
+          ? 'Heavy Rain Advisory'
+          : 'High Wind Advisory';
       return {
-        level: 'High Wind / Rain Advisory',
+        level: title,
         badgeClass: 'bg-orange-950/80 text-orange-200 border-orange-500/50',
-        text: `🟠 ELEVATED WEATHER AT +${forecastHour}h (${worstWind} mph wind). Gusty winds along corridor. Light/empty rigs take note.`,
+        text: `🟠 ELEVATED CONDITIONS AT +${forecastHour}h ${precipContext}. Light/empty rigs take note.`,
+        worstWind,
+        worstRain,
+        worstSnow,
+        maxScore,
       };
     }
     if (maxScore === 2) {
+      const condition =
+        worstSnow > 0
+          ? `${worstSnow.toFixed(1)} in/h light snow`
+          : worstRain > 0
+          ? `${worstRain.toFixed(2)} in/h light rain`
+          : `${worstWind.toFixed(0)} mph moderate breeze`;
       return {
-        level: 'Moderate Weather',
+        level: 'Moderate Conditions',
         badgeClass: 'bg-amber-950/80 text-amber-200 border-amber-500/50',
-        text: `🟡 MODERATE CONDITIONS AT +${forecastHour}h: Light rain or 25–34 mph breeze along route.`,
+        text: `🟡 MODERATE AT +${forecastHour}h: ${condition} along corridor.`,
+        worstWind,
+        worstRain,
+        worstSnow,
+        maxScore,
       };
     }
     return {
       level: 'Clear Corridor',
       badgeClass: 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50',
-      text: `🟢 ALL CLEAR AT +${forecastHour}h (${worstWind} mph breeze). Ideal driving conditions along route.`,
+      text: `🟢 ALL CLEAR AT +${forecastHour}h (${worstWind.toFixed(0)} mph breeze). Ideal driving conditions along route.`,
+      worstWind,
+      worstRain,
+      worstSnow,
+      maxScore,
     };
   };
 
@@ -191,9 +239,28 @@ export default function ForecastSliderBar({
             </span>
             <span className="line-clamp-1">{advisory.text}</span>
           </div>
-          <span className="text-[10px] text-slate-400 font-mono shrink-0 hidden md:inline">
-            Heatmap updates live
-          </span>
+          <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+            {heatmapMode === 'rain' && (
+              <span className="text-sky-300 font-bold bg-sky-950/70 px-2 py-0.5 rounded border border-sky-500/30">
+                🌧️ Peak Rain: {advisory.worstRain ? advisory.worstRain.toFixed(2) : '0.00'} in/hr
+              </span>
+            )}
+            {heatmapMode === 'snow' && (
+              <span className="text-purple-300 font-bold bg-purple-950/70 px-2 py-0.5 rounded border border-purple-500/30">
+                ❄️ Peak Snow: {advisory.worstSnow ? advisory.worstSnow.toFixed(2) : '0.00'} in/hr
+              </span>
+            )}
+            {heatmapMode === 'wind' && (
+              <span className="text-amber-300 font-bold bg-amber-950/70 px-2 py-0.5 rounded border border-amber-500/30">
+                🌬️ Peak Wind: {advisory.worstWind ? advisory.worstWind.toFixed(0) : '0'} mph
+              </span>
+            )}
+            {heatmapMode === 'risk' && (
+              <span className="text-rose-300 font-bold bg-rose-950/70 px-2 py-0.5 rounded border border-rose-500/30">
+                🛡️ Max Risk: Level {advisory.maxScore || 1}/5
+              </span>
+            )}
+          </div>
         </div>
 
         {!isMinimized && (
@@ -288,16 +355,28 @@ export default function ForecastSliderBar({
                   <span>Wind Speed</span>
                 </button>
                 <button
-                  onClick={() => setHeatmapMode('precip')}
+                  onClick={() => setHeatmapMode('rain')}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-all ${
-                    heatmapMode === 'precip'
-                      ? 'bg-blue-500/80 text-white font-bold shadow'
+                    heatmapMode === 'rain'
+                      ? 'bg-blue-600 text-white font-bold shadow'
                       : 'text-slate-400 hover:text-white'
                   }`}
-                  title="Shows rain and snow showers"
+                  title="Shows rain precipitation intensity (in/hr)"
                 >
-                  <CloudRain className="w-3.5 h-3.5" />
-                  <span>Rain & Snow</span>
+                  <CloudRain className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Rain</span>
+                </button>
+                <button
+                  onClick={() => setHeatmapMode('snow')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-all ${
+                    heatmapMode === 'snow'
+                      ? 'bg-purple-600 text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Shows snowfall accumulation rate (in/hr)"
+                >
+                  <Snowflake className="w-3.5 h-3.5 text-purple-300" />
+                  <span>Snow</span>
                 </button>
               </div>
             </div>

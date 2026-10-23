@@ -91,3 +91,50 @@ export const LOAD_PRESETS = [
   { weight: 30000, label: '30k Loaded', desc: 'Triggers 45-54 mph shutdown' },
   { weight: 45000, label: '45k Max Gross', desc: 'Triggers 35-44 mph severe' },
 ];
+
+/**
+ * Checks whether Spotter AI truck load weight rules escalate the weather risk.
+ * - Wind 45-54 mph & Load >= 30,000 lbs -> Escalates to No Travel (5)
+ * - Wind 35-44 mph & Load > 40,000 lbs -> Escalates to Severe (4)
+ * - Wind >= 55 mph -> Mandatory No Travel (5)
+ */
+export function evaluateLoadRule(windMph, loadWeight) {
+  const wind = Number(windMph) || 0;
+  const weight = Number(loadWeight) || 0;
+
+  if (wind >= 45 && wind < 55 && weight >= 30000) {
+    return {
+      triggered: true,
+      text: 'Load Rule Triggered: >30,000 lbs in 45-54 mph winds -> No Travel',
+      ruleType: 'no_travel',
+      level: 'No Travel',
+      score: 5,
+    };
+  }
+
+  if (wind >= 35 && wind < 45 && weight > 40000) {
+    return {
+      triggered: true,
+      text: 'Load Rule Triggered: >40,000 lbs in 35-44 mph winds -> Severe',
+      ruleType: 'severe',
+      level: 'Severe',
+      score: 4,
+    };
+  }
+
+  if (wind >= 55) {
+    return {
+      triggered: true,
+      text: 'Extreme Wind Rule: ≥55 mph winds -> Mandatory No Travel',
+      ruleType: 'extreme_wind',
+      level: 'No Travel',
+      score: 5,
+    };
+  }
+
+  return {
+    triggered: false,
+    text: null,
+    ruleType: null,
+  };
+}

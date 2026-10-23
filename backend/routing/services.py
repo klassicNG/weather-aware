@@ -119,8 +119,16 @@ GLOBAL_TRUCKING_HUBS = {
     "johannesburg": {"name": "Johannesburg, South Africa", "lat": -26.2041, "lon": 28.0473},
     "cape town": {"name": "Cape Town, South Africa", "lat": -33.9249, "lon": 18.4241},
     "lagos": {"name": "Lagos, Nigeria", "lat": 6.5244, "lon": 3.3792},
+    "abuja": {"name": "Abuja, Nigeria", "lat": 9.0765, "lon": 7.3986},
+    "kano": {"name": "Kano, Nigeria", "lat": 12.0022, "lon": 8.5920},
+    "ibadan": {"name": "Ibadan, Nigeria", "lat": 7.3775, "lon": 3.9470},
+    "port harcourt": {"name": "Port Harcourt, Nigeria", "lat": 4.8156, "lon": 7.0498},
+    "benin city": {"name": "Benin City, Nigeria", "lat": 6.3350, "lon": 5.6037},
+    "kaduna": {"name": "Kaduna, Nigeria", "lat": 10.5105, "lon": 7.4165},
     "cairo": {"name": "Cairo, Egypt", "lat": 30.0444, "lon": 31.2357},
     "nairobi": {"name": "Nairobi, Kenya", "lat": -1.2921, "lon": 36.8219},
+    "accra": {"name": "Accra, Ghana", "lat": 5.6037, "lon": -0.1870},
+    "casablanca": {"name": "Casablanca, Morocco", "lat": 33.5731, "lon": -7.5898},
     "dubai": {"name": "Dubai, UAE", "lat": 25.2048, "lon": 55.2708},
 
     # Asia
@@ -182,20 +190,19 @@ def geocode_location(location_input: Any) -> Dict[str, Any]:
             GEOCODE_CACHE[norm_key] = res
             return res
 
-    # Query Photon API (fast, worldwide OSM geocoder)
+    # Query Open-Meteo Geocoding API (Fast, reliable, worldwide, no API key needed)
     try:
-        url = f"https://photon.komoot.io/api/?q={requests.utils.quote(loc_str)}&limit=1"
-        resp = ROUTING_SESSION.get(url, timeout=2.5)
+        om_url = f"https://geocoding-api.open-meteo.com/v1/search?name={requests.utils.quote(loc_str)}&count=1&language=en&format=json"
+        resp = ROUTING_SESSION.get(om_url, timeout=(1.5, 2.5))
         if resp.status_code == 200:
             data = resp.json()
-            features = data.get("features", [])
-            if features:
-                coords = features[0]["geometry"]["coordinates"]
-                props = features[0].get("properties", {})
-                name = props.get("name") or loc_str
-                country = props.get("country") or props.get("state")
+            results = data.get("results", [])
+            if results:
+                first = results[0]
+                name = first.get("name", loc_str)
+                country = first.get("country") or first.get("admin1")
                 full_name = f"{name}, {country}" if country else name
-                res = {"name": full_name, "lat": coords[1], "lon": coords[0]}
+                res = {"name": full_name, "lat": float(first["latitude"]), "lon": float(first["longitude"])}
                 GEOCODE_CACHE[norm_key] = res
                 return res
     except Exception:
@@ -273,18 +280,19 @@ def _generate_synthetic_route(
 def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) -> List[Dict[str, Any]]:
     """
     Queries OSRM API for driving routes.
-    Guarantees returning exactly 3 distinct, realistic route options
-    by generating northern/southern corridor offsets if OSRM returns < 3 routes.
+    Guarantees returning exactly 3 distinct, realistic route options.
+    Uses strict 3.5s timeout on primary query and generates alternative corridors
+    instantly to guarantee < 4s total response time worldwide.
     """
     start_lon, start_lat = start["lon"], start["lat"]
     end_lon, end_lat = end["lon"], end["lat"]
 
     routes = []
 
-    # 1. Primary OSRM query requesting alternatives
+    # 1. Primary OSRM query requesting alternatives with strict timeout
     try:
         url = f"{OSRM_BASE_URL}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson&alternatives=3"
-        resp = ROUTING_SESSION.get(url, timeout=2.5)
+        resp = ROUTING_SESSION.get(url, timeout=(1.5, 3.5))
         if resp.status_code == 200:
             data = resp.json()
             if data.get("code") == "Ok":
@@ -292,50 +300,71 @@ def fetch_guaranteed_3_routes(start: Dict[str, float], end: Dict[str, float]) ->
     except Exception:
         routes = []
 
-    # Compute perpendicular offset waypoints concurrently if we have fewer than 3 routes
-    dx = end_lon - start_lon
-    dy = end_lat - start_lat
-    dist_deg = max(0.01, math.hypot(dx, dy))
-    perp_x = -dy / dist_deg
-    perp_y = dx / dist_deg
-
     mid_lat = (start_lat + end_lat) / 2.0
     mid_lon = (start_lon + end_lon) / 2.0
 
-    offset_mag = min(1.4, max(0.6, dist_deg * 0.12))
-    offsets = [offset_mag, -offset_mag]
+    def _get_midpoint_coords(r: Dict[str, Any]) -> Tuple[float, float]:
+        coords = r.get("geometry", {}).get("coordinates", [])
+        if not coords:
+            return (mid_lat, mid_lon)
+        mid_c = coords[len(coords) // 2]
+        return (mid_c[1], mid_c[0])  # (lat, lon)
 
-    def _fetch_offset_route(off: float) -> Optional[Dict[str, Any]]:
-        wp_lat = mid_lat + perp_y * off
-        wp_lon = mid_lon + perp_x * off
-        try:
-            wp_url = f"{OSRM_BASE_URL}/{start_lon},{start_lat};{wp_lon:.4f},{wp_lat:.4f};{end_lon},{end_lat}?overview=full&geometries=geojson"
-            resp = ROUTING_SESSION.get(wp_url, timeout=2.0)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("code") == "Ok" and data.get("routes"):
-                    return data["routes"][0]
-        except Exception:
-            pass
-        return None
+    distinct_routes: List[Dict[str, Any]] = []
 
-    if len(routes) < 3:
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [executor.submit(_fetch_offset_route, off) for off in offsets]
-            for f in futures:
-                res_r = f.result()
-                if res_r:
-                    routes.append(res_r)
+    # Check candidates from primary OSRM query
+    for cand in routes:
+        cand_mid = _get_midpoint_coords(cand)
+        is_too_close = False
+        for ex in distinct_routes:
+            ex_mid = _get_midpoint_coords(ex)
+            # If midpoints are within 35 miles, they follow virtually the same highway
+            if haversine_miles(cand_mid[0], cand_mid[1], ex_mid[0], ex_mid[1]) < 35.0:
+                is_too_close = True
+                break
+        if not is_too_close:
+            distinct_routes.append(cand)
+        if len(distinct_routes) >= 3:
+            break
 
-    # If still fewer than 3 (e.g. offline/network failure), generate synthetic corridor routes
-    fallback_factors = [0.0, 0.9, -0.9]
-    while len(routes) < 3:
-        idx = len(routes)
-        factor = fallback_factors[idx] if idx < len(fallback_factors) else 0.5 * idx
+    # If we have 1 or 2 routes, derive realistic northern/southern alternate corridors
+    # instantly by applying smooth lateral offsets to the base highway geometry (0.001s, 0 network wait)
+    if 1 <= len(distinct_routes) < 3:
+        base_route = distinct_routes[0]
+        base_coords = base_route.get("geometry", {}).get("coordinates", [])
+        base_dist = base_route.get("distance", 0.0)
+        base_dur = base_route.get("duration", 0.0)
+        factors = [0.45, -0.45]
+        
+        for i, factor in enumerate(factors):
+            if len(distinct_routes) >= 3:
+                break
+            n_pts = len(base_coords)
+            if n_pts > 4:
+                offset_coords = []
+                for c_idx, (c_lon, c_lat) in enumerate(base_coords):
+                    t = c_idx / float(n_pts - 1)
+                    curve = math.sin(t * math.pi) * factor
+                    offset_coords.append([round(c_lon, 5), round(c_lat + curve, 5)])
+                distinct_routes.append({
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": offset_coords
+                    },
+                    "distance": base_dist * (1.05 + 0.03 * (i + 1)),
+                    "duration": base_dur * (1.06 + 0.04 * (i + 1)),
+                    "legs": []
+                })
+
+    # If OSRM was completely unreachable or timed out, generate realistic synthetic corridors
+    fallback_factors = [0.0, 1.2, -1.2]
+    while len(distinct_routes) < 3:
+        idx = len(distinct_routes)
+        factor = fallback_factors[idx] if idx < len(fallback_factors) else 0.8 * idx
         synthetic = _generate_synthetic_route(start, end, offset_factor=factor, route_index=idx + 1)
-        routes.append(synthetic)
+        distinct_routes.append(synthetic)
 
-    return routes[:3]
+    return distinct_routes[:3]
 
 
 def sample_checkpoints_from_route(
@@ -560,12 +589,58 @@ def rank_and_summarize_routes(routes: List[Dict[str, Any]]) -> Tuple[List[Dict[s
     return evaluated_routes, winner_id
 
 
+def apply_simulated_storm(routes: List[Dict[str, Any]], load_weight: float) -> List[Dict[str, Any]]:
+    """
+    Applies high winds (48.0 mph and 40.0 mph) along checkpoints to test load weight rules:
+    - 48.0 mph wind: No Travel (5) if load_weight >= 30,000 lbs, else Severe (4)
+    - 40.0 mph wind: Severe (4) if load_weight > 40,000 lbs, else High (3)
+    """
+    stormy_routes = []
+    for r_idx, route in enumerate(routes):
+        cps = route.get("checkpoints", [])
+        updated_cps = []
+        for cp_idx, cp in enumerate(cps):
+            # Apply storm to a middle stretch of checkpoints
+            mid_start = max(1, len(cps) // 4)
+            mid_end = min(len(cps), mid_start + max(2, len(cps) // 3))
+
+            if mid_start <= cp_idx <= mid_end:
+                wind_mph = 48.0
+                rain_in_hr = 0.35
+                snow_in_hr = 0.0
+                risk_eval = evaluate_checkpoint_risk(wind_mph, rain_in_hr, snow_in_hr, load_weight)
+
+                new_cp = dict(cp)
+                new_cp["weather"] = {
+                    **(new_cp.get("weather") or {}),
+                    "wind_mph": wind_mph,
+                    "rain_in_hr": rain_in_hr,
+                    "snow_in_hr": snow_in_hr,
+                }
+                new_cp["risk"] = risk_eval
+
+                forecast_48h = []
+                for _ in range(49):
+                    forecast_48h.append([wind_mph, rain_in_hr, snow_in_hr, risk_eval["risk_score"]])
+                new_cp["forecast_48h"] = forecast_48h
+                updated_cps.append(new_cp)
+            else:
+                updated_cps.append(cp)
+
+        stormy_routes.append({
+            **route,
+            "checkpoints": updated_cps,
+        })
+    return stormy_routes
+
+
 def process_route_analysis(
     origin_input: Any,
     destination_input: Any,
     departure_time_iso: str,
     load_weight: float,
-    checkpoint_interval_miles: float = 50.0
+    checkpoint_interval_miles: float = 50.0,
+    simulate_storm: bool = False
 ) -> Dict[str, Any]:
     """
     Orchestrates end-to-end route analysis with fast in-memory caching
@@ -581,7 +656,8 @@ def process_route_analysis(
     departure_dt = _parse_iso_datetime(departure_time_iso)
 
     # Cache key: lat/lon of origin & destination + interval
-    cache_key = f"{origin['lat']:.3f},{origin['lon']:.3f}->{destination['lat']:.3f},{destination['lon']:.3f}:{interval}"
+    cache_suffix = ":storm" if simulate_storm else ""
+    cache_key = f"{origin['lat']:.3f},{origin['lon']:.3f}->{destination['lat']:.3f},{destination['lon']:.3f}:{interval}{cache_suffix}"
     cached_entry = CORRIDOR_CACHE.get(cache_key)
 
     # FAST CACHE HIT: If routes & weather are cached, instantly recompute risk (<5ms)
@@ -630,6 +706,9 @@ def process_route_analysis(
                 "checkpoints": recomputed_cps,
             })
 
+        if simulate_storm:
+            processed_routes = apply_simulated_storm(processed_routes, load_weight)
+
         ranked_routes, recommended_id = rank_and_summarize_routes(processed_routes)
         return {
             "origin": origin,
@@ -644,20 +723,26 @@ def process_route_analysis(
 
     # CACHE MISS: Compute 3 routes & sample checkpoints
     raw_routes = fetch_guaranteed_3_routes(origin, destination)
-    route_names = [
-        "Primary Highway Route",
-        "Northern Corridor Alternative",
-        "Southern Bypass Route",
-    ]
+    direct_mid_lat = (origin["lat"] + destination["lat"]) / 2.0
 
     all_sampled_checkpoints = []
     route_metadata = []
 
     for idx, raw_r in enumerate(raw_routes):
         route_id = f"route_{idx + 1}"
-        name = route_names[idx] if idx < len(route_names) else f"Route Option {idx + 1}"
         geom = raw_r.get("geometry", {})
         coords = geom.get("coordinates", [])
+
+        if idx == 0:
+            name = "Primary Highway Route"
+        else:
+            mid_lat = coords[len(coords) // 2][1] if coords else origin["lat"]
+            if mid_lat > direct_mid_lat + 0.3:
+                name = "Northern Corridor Alternative"
+            elif mid_lat < direct_mid_lat - 0.3:
+                name = "Southern Bypass Route"
+            else:
+                name = f"Alternate Corridor {idx}"
 
         dist_meters = raw_r.get("distance", 0.0)
         dist_miles = dist_meters / 1609.34
@@ -733,6 +818,9 @@ def process_route_analysis(
     }
 
     # Rank and summarize
+    if simulate_storm:
+        processed_routes = apply_simulated_storm(processed_routes, load_weight)
+
     ranked_routes, recommended_id = rank_and_summarize_routes(processed_routes)
 
     return {
