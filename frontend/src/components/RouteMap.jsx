@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -20,6 +20,7 @@ import {
   Tag,
   ShieldCheck,
   ChevronRight,
+  ChevronLeft,
 } from 'lucide-react';
 
 // Distinct color palettes for all 3 corridors
@@ -92,6 +93,95 @@ export default function RouteMap({
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   );
 
+  const scrollTrackRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftRef = useRef(0);
+  const hasDraggedRef = useRef(false);
+  const [isGrabbing, setIsGrabbing] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollTrackRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 6);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 6);
+  }, []);
+
+  const scrollByOffset = (offset) => {
+    if (scrollTrackRef.current) {
+      scrollTrackRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
+
+  const handleMouseDown = (e) => {
+    // Only primary (left) mouse click
+    if (e.button !== 0 || !scrollTrackRef.current) return;
+    isDraggingRef.current = true;
+    hasDraggedRef.current = false;
+    startXRef.current = e.pageX;
+    scrollLeftRef.current = scrollTrackRef.current.scrollLeft;
+    setIsGrabbing(true);
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseMove = (e) => {
+      if (!isDraggingRef.current || !scrollTrackRef.current) return;
+      const walk = e.pageX - startXRef.current;
+      if (Math.abs(walk) > 4) {
+        hasDraggedRef.current = true;
+      }
+      scrollTrackRef.current.scrollLeft = scrollLeftRef.current - walk;
+    };
+
+    const handleGlobalMouseUp = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      setIsGrabbing(false);
+      if (hasDraggedRef.current) {
+        setTimeout(() => {
+          hasDraggedRef.current = false;
+        }, 100);
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = scrollTrackRef.current;
+    if (!el) return;
+
+    checkScroll();
+    el.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [routes, checkScroll]);
+
+  const handleClickCapture = (e) => {
+    if (hasDraggedRef.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  };
+
+  const handleWheel = (e) => {
+    if (!scrollTrackRef.current) return;
+    if (e.deltaX === 0 && e.deltaY !== 0) {
+      scrollTrackRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', handleResize);
@@ -111,90 +201,130 @@ export default function RouteMap({
       {routes.length > 0 && (
         <div className="absolute top-0 left-0 right-0 z-[450] bg-[#070a12]/95 backdrop-blur-md border-b border-white/10 px-2 sm:px-3 py-1.5 flex items-center justify-between gap-1.5 sm:gap-2 shadow-2xl pointer-events-auto">
           {/* Corridor Selection Tabs & Mobile Dispatch Opener - Contained in flexible scrollable track */}
-          <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar flex items-center gap-1.5 sm:gap-2 pr-1">
-            {/* Mobile Open Dispatch Button - Cleanly integrated inside top bar */}
-            {onOpenDispatch && (
+          <div className="flex-1 min-w-0 flex items-center gap-1 relative overflow-hidden">
+            {canScrollLeft && (
               <button
                 type="button"
-                onClick={onOpenDispatch}
-                className="lg:hidden shrink-0 px-2 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 active:bg-sky-500/40 border border-sky-400/40 text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition-all"
-                title="Open Dispatch Controls"
+                onClick={() => scrollByOffset(-180)}
+                className="shrink-0 p-1 rounded-md bg-slate-900/95 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 shadow-lg transition-all z-10"
+                title="Scroll routes left"
               >
-                <span>🚚</span>
-                <span className="font-mono text-[10px] uppercase tracking-wider">Dispatch</span>
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
             )}
 
-            {routes.map((route, idx) => {
-              const isSelected = route.id === activeRoute?.id;
-              const isRec = route.is_recommended || route.id === recommendedRoute?.id;
-              const palette = ROUTE_PALETTES[idx % ROUTE_PALETTES.length];
-              const sum = route.summary || {};
-
-              let etaTime = '--:--';
-              if (sum.eta_destination) {
-                try {
-                  const d = new Date(sum.eta_destination);
-                  etaTime = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                } catch {
-                  etaTime = sum.eta_destination;
-                }
-              }
-
-              return (
+            <div
+              ref={scrollTrackRef}
+              onMouseDown={handleMouseDown}
+              onClickCapture={handleClickCapture}
+              onWheel={handleWheel}
+              onDragStart={(e) => e.preventDefault()}
+              className={`flex-1 min-w-0 overflow-x-auto no-scrollbar flex items-center gap-1.5 sm:gap-2 pr-1 select-none ${
+                isGrabbing ? 'cursor-grabbing' : 'cursor-grab'
+              }`}
+              style={{ touchAction: 'pan-x' }}
+            >
+              {/* Mobile Open Dispatch Button - Cleanly integrated inside top bar */}
+              {onOpenDispatch && (
                 <button
-                  key={route.id}
                   type="button"
-                  onClick={() => setActiveRouteId && setActiveRouteId(route.id)}
-                  className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-mono transition-all flex items-center gap-1.5 sm:gap-2 border shrink-0 ${
-                    isSelected
-                      ? 'bg-slate-800/95 border-white/25 text-white shadow-lg ring-1 ring-sky-400/50'
-                      : 'bg-slate-950/60 hover:bg-slate-900 border-white/5 text-slate-400 hover:text-slate-200'
-                  }`}
+                  onClick={(e) => {
+                    if (hasDraggedRef.current) return;
+                    onOpenDispatch(e);
+                  }}
+                  className="lg:hidden shrink-0 px-2 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 active:bg-sky-500/40 border border-sky-400/40 text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition-all"
+                  title="Open Dispatch Controls"
                 >
-                  <span
-                    className="w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: palette.primary }}
-                  />
-                  {/* Desktop view */}
-                  <div className="hidden sm:flex items-center gap-1.5">
-                    <span className="font-extrabold tracking-tight text-white whitespace-nowrap">
-                      {route.name}
-                    </span>
-                    <span className={`text-[10px] font-bold ${palette.badgeClass}`}>
-                      [{isRec ? '★ RECOMMENDED' : `ALT ${idx}`}]
-                    </span>
-                  </div>
-
-                  {/* Mobile compact view */}
-                  <div className="flex sm:hidden items-center gap-1">
-                    <span className="font-extrabold text-[11px] text-white whitespace-nowrap">
-                      {isRec ? '★ Safest' : `Alt ${idx}`}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-slate-300 border-l border-white/10 pl-1.5 sm:pl-2">
-                    <span className="font-bold text-slate-200">{sum.total_duration_hours}h</span>
-                    <span className="hidden sm:inline text-slate-500">•</span>
-                    <span className="hidden sm:inline">{sum.total_distance_miles}m</span>
-                    <span className="text-slate-500">•</span>
-                    <span className="text-sky-300 whitespace-nowrap">Arr {etaTime}</span>
-                    <span className="hidden sm:inline text-slate-500">•</span>
-                    <span
-                      className={`hidden sm:inline font-bold ${
-                        sum.average_risk_score <= 1.5
-                          ? 'text-emerald-400'
-                          : sum.average_risk_score <= 2.5
-                          ? 'text-amber-400'
-                          : 'text-rose-400'
-                      }`}
-                    >
-                      {sum.average_risk_score <= 1.5 ? 'Clear' : sum.max_risk_level}
-                    </span>
-                  </div>
+                  <span>🚚</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider">Dispatch</span>
                 </button>
-              );
-            })}
+              )}
+
+              {routes.map((route, idx) => {
+                const isSelected = route.id === activeRoute?.id;
+                const isRec = route.is_recommended || route.id === recommendedRoute?.id;
+                const palette = ROUTE_PALETTES[idx % ROUTE_PALETTES.length];
+                const sum = route.summary || {};
+
+                let etaTime = '--:--';
+                if (sum.eta_destination) {
+                  try {
+                    const d = new Date(sum.eta_destination);
+                    etaTime = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                  } catch {
+                    etaTime = sum.eta_destination;
+                  }
+                }
+
+                return (
+                  <button
+                    key={route.id}
+                    type="button"
+                    onClick={() => {
+                      if (hasDraggedRef.current) return;
+                      setActiveRouteId && setActiveRouteId(route.id);
+                    }}
+                    className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-mono transition-all flex items-center gap-1.5 sm:gap-2 border shrink-0 ${
+                      isSelected
+                        ? 'bg-slate-800/95 border-white/25 text-white shadow-lg ring-1 ring-sky-400/50'
+                        : 'bg-slate-950/60 hover:bg-slate-900 border-white/5 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span
+                      className="w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: palette.primary }}
+                    />
+                    {/* Desktop view */}
+                    <div className="hidden sm:flex items-center gap-1.5">
+                      <span className="font-extrabold tracking-tight text-white whitespace-nowrap">
+                        {route.name}
+                      </span>
+                      <span className={`text-[10px] font-bold ${palette.badgeClass}`}>
+                        [{isRec ? '★ RECOMMENDED' : `ALT ${idx}`}]
+                      </span>
+                    </div>
+
+                    {/* Mobile compact view */}
+                    <div className="flex sm:hidden items-center gap-1">
+                      <span className="font-extrabold text-[11px] text-white whitespace-nowrap">
+                        {isRec ? '★ Safest' : `Alt ${idx}`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-slate-300 border-l border-white/10 pl-1.5 sm:pl-2">
+                      <span className="font-bold text-slate-200">{sum.total_duration_hours}h</span>
+                      <span className="hidden sm:inline text-slate-500">•</span>
+                      <span className="hidden sm:inline">{sum.total_distance_miles}m</span>
+                      <span className="text-slate-500">•</span>
+                      <span className="text-sky-300 whitespace-nowrap">Arr {etaTime}</span>
+                      <span className="hidden sm:inline text-slate-500">•</span>
+                      <span
+                        className={`hidden sm:inline font-bold ${
+                          sum.average_risk_score <= 1.5
+                            ? 'text-emerald-400'
+                            : sum.average_risk_score <= 2.5
+                            ? 'text-amber-400'
+                            : 'text-rose-400'
+                        }`}
+                      >
+                        {sum.average_risk_score <= 1.5 ? 'Clear' : sum.max_risk_level}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {canScrollRight && (
+              <button
+                type="button"
+                onClick={() => scrollByOffset(180)}
+                className="shrink-0 p-1 rounded-md bg-slate-900/95 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 shadow-lg transition-all z-10"
+                title="Scroll routes right"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Right Controls: Checkpoint Counter & ETA density toggle */}
